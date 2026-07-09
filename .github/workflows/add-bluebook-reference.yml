@@ -1,0 +1,51 @@
+name: Add Bluebook reference files
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/add-bluebook-reference.yml
+
+permissions:
+  contents: write
+
+jobs:
+  add-reference-files:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Download source PDF
+        run: |
+          mkdir -p reference
+          curl --fail --location --retry 3 \
+            'https://dionneanthon.com/bbu/Anthon%20Bluebook%20Uncovered%20%2822nd%20Edition%20of%20Bluebook%29%202025.08.06.pdf' \
+            --output reference/The_Bluebook_Uncovered_22e.pdf
+
+      - name: Install conversion dependencies
+        run: python -m pip install --disable-pip-version-check 'PyMuPDF==1.28.0' 'pymupdf4llm==1.28.0'
+
+      - name: Reproduce Markdown conversion
+        run: python scripts/convert_bluebook_uncovered.py
+
+      - name: Place final files
+        run: |
+          cp reference/generated/The_Bluebook_Uncovered_22e.md reference/The_Bluebook_Uncovered_22e.md
+          mkdir -p reference/assets
+          cp reference/generated/assets/figure_8_1.png reference/assets/figure_8_1.png
+          rm -rf reference/generated reference/generated.zip
+
+      - name: Commit reference files and remove one-time helpers
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add reference
+          git rm .github/workflows/add-bluebook-reference.yml scripts/convert_bluebook_uncovered.py
+          git commit -m 'Add Bluebook Uncovered PDF and Markdown reference'
+          git push
