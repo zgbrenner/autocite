@@ -30,10 +30,7 @@ class DeepReviewer:
 
         retrieval = await self.source_client.lookup_and_fetch(text)
         if not retrieval.get("available"):
-            return {
-                **retrieval,
-                "cases": [],
-            }
+            return {**retrieval, "cases": []}
 
         authorities = list(retrieval.get("authorities") or [])
         results: list[dict[str, Any]] = []
@@ -53,12 +50,15 @@ class DeepReviewer:
             if authority_index in unused:
                 unused.remove(authority_index)
             authority = dict(authorities[authority_index])
-            source_text = str(authority.pop("source_text", ""))
+            analysis_text = str(
+                authority.pop("analysis_text", authority.get("source_text", ""))
+            )
+            authority.pop("source_text", None)
             evidence = analyze_case_evidence(
                 document_text=text,
                 citation_start=int(citation.get("start") or 0),
                 citation_text=str(citation.get("text") or ""),
-                source_text=source_text,
+                source_text=analysis_text,
                 pincite=(citation.get("components") or {}).get("pincite"),
                 include_source_text=include_source_text,
             )
@@ -77,9 +77,16 @@ class DeepReviewer:
             "cases": results,
             "confidence_legend": {
                 "deterministic": "Formatting or exact text comparison performed by code.",
-                "source_verified": "The retrieved source directly contains the stated metadata, quotation, or page marker.",
-                "model_inference_required": "The host model or a human must assess legal meaning, scope, and support.",
-                "unresolved": "The source was missing, ambiguous, or lacked reliable markers.",
+                "source_verified": (
+                    "The retrieved source directly contains the stated metadata, "
+                    "quotation, or page marker."
+                ),
+                "model_inference_required": (
+                    "The host model or a human must assess legal meaning, scope, and support."
+                ),
+                "unresolved": (
+                    "The source was missing, ambiguous, or lacked reliable markers."
+                ),
             },
             "limitations": retrieval.get("limitations") or [],
         }
@@ -93,7 +100,14 @@ class DeepReviewer:
         citation_text = str(citation.get("text") or "").lower()
         for index in unused:
             authority = authorities[index]
-            variants = [authority.get("citation"), *(authority.get("normalized_citations") or [])]
-            if any(str(variant).lower() in citation_text for variant in variants if variant):
+            variants = [
+                authority.get("citation"),
+                *(authority.get("normalized_citations") or []),
+            ]
+            if any(
+                str(variant).lower() in citation_text
+                for variant in variants
+                if variant
+            ):
                 return index
         return unused[0] if unused else None
