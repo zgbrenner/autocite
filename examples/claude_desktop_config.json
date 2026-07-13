@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "autocite": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "C:\\path\\to\\autocite",
+        "run",
+        "autocite-mcp"
+      ],
+      "env": {
+        "COURTLISTENER_TOKEN": "replace-with-your-token"
+      }
+    }
+  }
+}
