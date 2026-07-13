@@ -1,13 +1,20 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import sys
 from pathlib import Path
 from typing import Any
 
 from .formatters import generate_citation
-from .tools import check_citations, list_capabilities
+from .setup_clients import install_claude_desktop
+from .tools import (
+    check_citations,
+    get_citation_guidance,
+    list_capabilities,
+    review_document,
+)
 
 
 def _read_text(value: str | None, file_path: str | None) -> str:
@@ -26,9 +33,18 @@ def _emit(payload: Any) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="autocite",
-        description="Audit and generate legal citations without an MCP client.",
+        description="Audit, fix, and generate legal citations without an MCP client.",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    review = subparsers.add_parser("review", help="Run the complete automatic citecheck workflow")
+    review.add_argument("text", nargs="?")
+    review.add_argument("--file")
+    review.add_argument("--document-type", default="auto")
+    review.add_argument("--mode", choices=("auto", "bluepages", "whitepages"), default="auto")
+    review.add_argument("--jurisdiction")
+    review.add_argument("--no-fix", action="store_true")
+    review.add_argument("--verify-cases", action="store_true")
 
     for name in ("check", "fix"):
         command = subparsers.add_parser(name)
@@ -48,12 +64,35 @@ def build_parser() -> argparse.ArgumentParser:
         "--output-style", choices=("plain", "markdown", "html"), default="plain"
     )
 
+    guidance = subparsers.add_parser("guidance")
+    guidance.add_argument("--mode", choices=("bluepages", "whitepages"), default="bluepages")
+    guidance.add_argument("--source-type", default="all")
+
+    setup = subparsers.add_parser("setup-claude", help="Install AutoCite into Claude Desktop")
+    setup.add_argument("--config", type=Path)
+    setup.add_argument("--courtlistener-token")
+
     subparsers.add_parser("capabilities")
     return parser
 
 
 def main() -> None:
     args = build_parser().parse_args()
+    if args.command == "review":
+        text = _read_text(args.text, args.file)
+        _emit(
+            asyncio.run(
+                review_document(
+                    text,
+                    document_type=args.document_type,
+                    mode=args.mode,
+                    jurisdiction=args.jurisdiction,
+                    apply_safe_fixes=not args.no_fix,
+                    verify_cases=args.verify_cases,
+                )
+            )
+        )
+        return
     if args.command in {"check", "fix"}:
         text = _read_text(args.text, args.file)
         _emit(
@@ -77,6 +116,17 @@ def main() -> None:
                     output_style=args.output_style,
                 )
             }
+        )
+        return
+    if args.command == "guidance":
+        _emit(get_citation_guidance(mode=args.mode, source_type=args.source_type))
+        return
+    if args.command == "setup-claude":
+        _emit(
+            install_claude_desktop(
+                config_path=args.config,
+                courtlistener_token=args.courtlistener_token,
+            )
         )
         return
     _emit(list_capabilities())
