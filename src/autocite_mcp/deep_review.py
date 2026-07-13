@@ -28,7 +28,12 @@ class DeepReviewer:
                 "message": "No full case citations were detected for source retrieval.",
             }
 
-        retrieval = await self.source_client.lookup_and_fetch(text)
+        lookup_text = "\n".join(
+            str(item.get("text") or "").strip()
+            for item in case_citations
+            if str(item.get("text") or "").strip()
+        )
+        retrieval = await self.source_client.lookup_and_fetch(lookup_text)
         if not retrieval.get("available"):
             return {**retrieval, "cases": []}
 
@@ -74,6 +79,11 @@ class DeepReviewer:
         return {
             "available": True,
             "provider": retrieval.get("provider", "CourtListener"),
+            "lookup_disclosure": {
+                "sent": "extracted_case_citations_only",
+                "citation_count": len(case_citations),
+                "surrounding_document_text_sent": False,
+            },
             "cases": results,
             "confidence_legend": {
                 "deterministic": "Formatting or exact text comparison performed by code.",
