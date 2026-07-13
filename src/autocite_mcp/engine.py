@@ -222,7 +222,7 @@ class CitationEngine:
                         )
                     )
 
-        for match in re.finditer(r"(?<!\w)(?:id\.?|ID\.?)(?!\w)", text):
+        for match in re.finditer(r"(?<!\w)id\.?(?!\w)", text, re.IGNORECASE):
             if match.group(0) != "Id.":
                 issues.append(
                     _issue(

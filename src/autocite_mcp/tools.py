@@ -5,10 +5,79 @@ from typing import Any
 
 from .engine import CitationEngine
 from .formatters import generate_citation, supported_source_types
+from .knowledge import get_knowledge_pack, infer_citation_mode
 from .rules import RULE_CATALOG, rule_reference, validate_mode
 from .verifiers import CourtListenerVerifier
 
 _ENGINE = CitationEngine()
+
+
+async def review_document(
+    text: str,
+    *,
+    document_type: str = "auto",
+    mode: str = "auto",
+    jurisdiction: str | None = None,
+    apply_safe_fixes: bool = True,
+    verify_cases: bool = False,
+) -> dict[str, Any]:
+    """Primary end-to-end citecheck workflow intended for LLM hosts."""
+    if not text.strip():
+        raise ValueError("text must not be empty")
+    detection = infer_citation_mode(
+        document_type=document_type, text=text, explicit_mode=mode
+    )
+    resolved_mode = str(detection["mode"])
+    initial = _ENGINE.analyze(text, mode=resolved_mode)
+    fixed = _ENGINE.fix(text, mode=resolved_mode) if apply_safe_fixes else None
+    corrected_text = fixed["fixed_text"] if fixed else text
+    final = _ENGINE.analyze(corrected_text, mode=resolved_mode)
+    source_types = list(final["summary"]["by_source_type"])
+    verification = (
+        await CourtListenerVerifier().verify_text(corrected_text)
+        if verify_cases
+        else {
+            "available": False,
+            "reason": "not_requested",
+            "message": "Set verify_cases=true to request CourtListener case verification.",
+            "results": [],
+        }
+    )
+    remaining = final["issues"]
+    return {
+        "workflow": "complete_citecheck",
+        "mode_detection": detection,
+        "mode": resolved_mode,
+        "document_type": document_type,
+        "jurisdiction": jurisdiction or "unspecified",
+        "original_text": text,
+        "corrected_text": corrected_text,
+        "applied_edits": fixed["applied_edits"] if fixed else [],
+        "citation_inventory": final["citations"],
+        "initial_summary": initial["summary"],
+        "final_summary": final["summary"],
+        "remaining_issues": remaining,
+        "mechanical_review_complete": len(remaining) == 0,
+        "completion_scope": "detected citation-format issues only",
+        "knowledge": get_knowledge_pack(resolved_mode, source_types),
+        "case_verification": verification,
+        "response_contract": [
+            "Use corrected_text as the base and preserve all non-citation prose.",
+            "If mode-detection confidence is low, state the assumed mode or confirm it with the user.",
+            "Explain applied_edits briefly rather than silently changing unrelated text.",
+            "For remaining_issues, use the returned knowledge only when all needed source facts are present.",
+            "Label missing facts, ambiguous antecedents, local-rule questions, and proposition checks as source review required.",
+            "Never claim that formatting alone proves an authority is real, current, controlling, or supportive.",
+        ],
+    }
+
+
+def get_citation_guidance(
+    *, mode: str = "bluepages", source_type: str = "all"
+) -> dict[str, Any]:
+    """Return compact mode- and source-specific citation guidance for an LLM."""
+    selected = None if source_type.strip().lower() == "all" else [source_type]
+    return get_knowledge_pack(mode, selected)
 
 
 def check_citations(
@@ -162,6 +231,8 @@ def explain_issue(code: str, *, mode: str = "bluepages") -> dict[str, Any]:
 def list_capabilities() -> dict[str, Any]:
     """Describe supported citation workflows and explicit limitations."""
     return {
+        "primary_workflow": "review_document",
+        "automatic_mode_detection": True,
         "modes": ["bluepages", "whitepages"],
         "source_types": supported_source_types(),
         "document_analysis": {
