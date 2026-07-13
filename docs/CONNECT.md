@@ -15,7 +15,7 @@ Ordinary formatting review is local to the AutoCite process. AutoCite contacts C
 - `verify_cases=true`;
 - `verify_case_citations`.
 
-Deep review may send citation-bearing document text to CourtListener's citation lookup endpoint to align citations with authorities. Retrieved opinion text is bounded, stripped of active HTML, and treated as untrusted quoted evidence—not instructions.
+Deep review sends only the extracted full case-citation strings to CourtListener's citation lookup endpoint. Surrounding propositions, quotations, client facts, and the complete document remain local. Retrieved opinion text is bounded for output, stripped of active HTML, and treated as untrusted quoted evidence—not instructions.
 
 ## Option A: Claude Desktop, local and private
 
@@ -94,11 +94,30 @@ For Team or Enterprise, an Owner first adds the URL under organization connector
 
 ## Host AutoCite
 
+### Optional private bearer gate
+
+For clients or gateways that can attach a fixed authorization header:
+
+```bash
+AUTOCITE_TRANSPORT=streamable-http \
+AUTOCITE_HOST=0.0.0.0 \
+AUTOCITE_API_TOKEN="LONG_RANDOM_SECRET" \
+autocite-mcp
+```
+
+Every `/mcp` request must contain:
+
+```text
+Authorization: Bearer LONG_RANDOM_SECRET
+```
+
+`/health` remains public. The bearer mode is appropriate for private single-tenant hosting; it is not a replacement for OAuth or per-user authorization. Clients that cannot attach a fixed header should use a secure tunnel or OAuth-aware gateway. See [`HOSTING.md`](HOSTING.md).
+
 ### Docker
 
 ```bash
 docker build -t autocite-mcp .
-docker run --rm -p 8000:8000 autocite-mcp
+docker run --rm -p 8000:8000 -e AUTOCITE_API_TOKEN="LONG_RANDOM_SECRET" autocite-mcp
 ```
 
 Health check:
@@ -121,7 +140,7 @@ The repository includes `render.yaml` and a `Dockerfile`.
 
 1. Create a Render Blueprint from the repository.
 2. Deploy the `autocite-mcp` service.
-3. Put authentication in front of the service before using confidential documents.
+3. Set `AUTOCITE_API_TOKEN` to a long random secret or put OAuth/authentication in front of the service.
 4. Use the authenticated HTTPS URL plus `/mcp` in Claude or ChatGPT.
 5. Add `COURTLISTENER_TOKEN` only through secret environment storage.
 
@@ -132,9 +151,9 @@ The repository includes `render.yaml` and a `Dockerfile`.
 Connected hosts can pass authorized file references to `review_uploaded_document`. The tool expects a file object containing either:
 
 - `data_base64`; or
-- an authorized `download_url` supplied by the host.
+- an authorized public-HTTPS `download_url` supplied by the host.
 
-Optional fields are `file_name` and `mime_type`. The MCP declaration includes ChatGPT's file-parameter metadata for `file`.
+Optional fields are `file_name` and `mime_type`. The MCP declaration includes ChatGPT's file-parameter metadata for `file`. Download URLs are checked against localhost, private/reserved IP addresses, private DNS resolutions, and unsafe redirects.
 
 Supported formats:
 
@@ -169,4 +188,4 @@ After a review, call `export_review_docx` with `original_text` and `corrected_te
 
 ## Scope
 
-AutoCite can verify that retrieved text contains specific metadata, language, or page markers. It can rank candidate passages for review. It cannot determine good-law status, controlling authority, legal proposition support, or treatment. See [`SOURCE_REVIEW.md`](SOURCE_REVIEW.md) and [`SECURITY.md`](SECURITY.md).
+AutoCite can verify that retrieved text contains specific metadata, language, or page markers. It can rank candidate passages for review. It cannot determine good-law status, controlling authority, legal proposition support, or treatment. See [`SOURCE_REVIEW.md`](SOURCE_REVIEW.md), [`SECURITY.md`](SECURITY.md), and [`HOSTING.md`](HOSTING.md).
