@@ -22,4 +22,20 @@ jobs:
       - run: uv sync --extra dev
       - run: uv run ruff check src tests
       - run: uv run pytest
+      - run: uv run python -m py_compile src/autocite_mcp/*.py
+      - run: uv run autocite eval --file evals/gold.jsonl
       - run: uv build
+      - name: Verify distribution boundaries
+        run: |
+          uv run python - <<'PY'
+          import zipfile
+          from pathlib import Path
+
+          wheel = next(Path("dist").glob("*.whl"))
+          with zipfile.ZipFile(wheel) as archive:
+              names = archive.namelist()
+          assert any(name.startswith("autocite_mcp/") for name in names)
+          assert not any(name.startswith("reference/") for name in names)
+          assert not any("The_Bluebook" in name for name in names)
+          print(f"verified {wheel}")
+          PY
