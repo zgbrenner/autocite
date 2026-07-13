@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import asyncio
 import io
+import ipaddress
 import mimetypes
+import socket
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
 from pathlib import Path
+from urllib.parse import urljoin, urlparse
 
+import httpx
 from docx import Document
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
@@ -14,6 +19,7 @@ from pypdf import PdfReader
 
 MAX_DOCUMENT_BYTES = 15 * 1024 * 1024
 MIN_PDF_TEXT_CHARS = 20
+MAX_DOWNLOAD_REDIRECTS = 4
 
 
 class DocumentLoadError(ValueError):
@@ -29,6 +35,96 @@ class DocumentInput:
     mime_type: str
     source_format: str
     warnings: tuple[str, ...] = ()
+
+
+def validate_download_url(url: str) -> str:
+    """Reject non-HTTPS and obvious private-network file URLs."""
+    parsed = urlparse(url)
+    if parsed.scheme.lower() != "https":
+        raise DocumentLoadError("unsafe_download_url", "Remote document URLs must use HTTPS.")
+    if parsed.username or parsed.password:
+        raise DocumentLoadError("unsafe_download_url", "Remote document URLs cannot contain credentials.")
+    host = (parsed.hostname or "").strip().lower().rstrip(".")
+    if not host:
+        raise DocumentLoadError("unsafe_download_url", "Remote document URL has no hostname.")
+    if host in {"localhost", "localhost.localdomain"} or host.endswith(".local"):
+        raise DocumentLoadError("unsafe_download_url", "Local and private-network hostnames are not allowed.")
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        address = None
+    if address and (
+        address.is_private
+        or address.is_loopback
+        or address.is_link_local
+        or address.is_multicast
+        or address.is_reserved
+        or address.is_unspecified
+    ):
+        raise DocumentLoadError("unsafe_download_url", "Private-network addresses are not allowed.")
+    return url
+
+
+async def _validate_resolved_host(url: str) -> None:
+    parsed = urlparse(validate_download_url(url))
+    host = parsed.hostname or ""
+    port = parsed.port or 443
+    try:
+        results = await asyncio.to_thread(
+            socket.getaddrinfo,
+            host,
+            port,
+            type=socket.SOCK_STREAM,
+        )
+    except OSError as exc:
+        raise DocumentLoadError("download_dns_error", "Remote document hostname could not be resolved.") from exc
+    for result in results:
+        address = ipaddress.ip_address(result[4][0])
+        if (
+            address.is_private
+            or address.is_loopback
+            or address.is_link_local
+            or address.is_multicast
+            or address.is_reserved
+            or address.is_unspecified
+        ):
+            raise DocumentLoadError(
+                "unsafe_download_url",
+                "Remote document hostname resolves to a private or reserved network.",
+            )
+
+
+async def download_document_url(
+    url: str,
+    *,
+    timeout: float = 30.0,
+    client_factory: type[httpx.AsyncClient] = httpx.AsyncClient,
+) -> tuple[bytes, str | None]:
+    """Download an authorized file URL with redirect and size safeguards."""
+    current = validate_download_url(url)
+    async with client_factory(timeout=timeout, follow_redirects=False) as client:
+        for _ in range(MAX_DOWNLOAD_REDIRECTS + 1):
+            await _validate_resolved_host(current)
+            async with client.stream("GET", current, headers={"Accept": "*/*"}) as response:
+                if response.status_code in {301, 302, 303, 307, 308}:
+                    location = response.headers.get("location")
+                    if not location:
+                        raise DocumentLoadError("download_redirect_error", "Remote document redirect has no location.")
+                    current = validate_download_url(urljoin(current, location))
+                    continue
+                response.raise_for_status()
+                length = response.headers.get("content-length")
+                if length and int(length) > MAX_DOCUMENT_BYTES:
+                    raise DocumentLoadError("document_too_large", "Remote document exceeds the 15 MB limit.")
+                chunks: list[bytes] = []
+                total = 0
+                async for chunk in response.aiter_bytes():
+                    total += len(chunk)
+                    if total > MAX_DOCUMENT_BYTES:
+                        raise DocumentLoadError("document_too_large", "Remote document exceeds the 15 MB limit.")
+                    chunks.append(chunk)
+                return b"".join(chunks), response.headers.get("content-type")
+    raise DocumentLoadError("download_redirect_error", "Remote document exceeded the redirect limit.")
 
 
 def _normalized_mime(filename: str, mime_type: str | None) -> str:
