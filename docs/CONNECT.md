@@ -2,115 +2,97 @@
 
 AutoCite supports two connection models:
 
-1. **Local Claude Desktop** — best for confidential documents because the citation engine stays on the computer.
-2. **Remote HTTPS MCP** — works with ChatGPT and Claude web connectors through an HTTPS `/mcp` URL.
+1. **Local Claude Desktop** — best for confidential documents because ordinary citation review stays on the computer.
+2. **Remote HTTPS MCP** — works with ChatGPT and Claude web through an authenticated HTTPS `/mcp` endpoint.
 
-The primary tool is `review_document`. The model should call it before trying to repair citations from memory. It automatically selects Bluepages or Whitepages mode, applies deterministic fixes, and returns the relevant citation playbook for unresolved issues.
+The primary tool is `review_document`. For uploaded TXT, Markdown, DOCX, or text-based PDF, use `review_uploaded_document`. Both automatically select Bluepages or Whitepages, apply deterministic fixes, and return the relevant citation playbook.
+
+## Network behavior
+
+Ordinary formatting review is local to the AutoCite process. AutoCite contacts CourtListener only when one of these is explicitly requested and `COURTLISTENER_TOKEN` is configured:
+
+- `deep_review=true`;
+- `verify_cases=true`;
+- `verify_case_citations`.
+
+Deep review may send citation-bearing document text to CourtListener's citation lookup endpoint to align citations with authorities. Retrieved opinion text is bounded, stripped of active HTML, and treated as untrusted quoted evidence—not instructions.
 
 ## Option A: Claude Desktop, local and private
 
-### 1. Install AutoCite
-
-With `uv`:
+### Install AutoCite
 
 ```bash
 uv tool install "git+https://github.com/zgbrenner/autocite.git"
-```
-
-From a cloned checkout:
-
-```bash
-uv sync
-```
-
-### 2. Install it into Claude Desktop
-
-For a tool installation:
-
-```bash
 autocite setup-claude
 ```
 
 From a cloned checkout:
 
 ```bash
+uv sync
 uv run autocite setup-claude
 ```
 
-The installer:
+The installer finds the normal Claude Desktop configuration, preserves existing MCP servers, creates a `.bak` backup, and uses the exact Python executable that ran it.
 
-- finds the normal Claude Desktop configuration location;
-- preserves all existing MCP servers;
-- creates a `.bak` backup when a configuration already exists;
-- adds AutoCite using the exact Python executable that ran the installer.
+Completely quit and reopen Claude Desktop. Then ask:
 
-Completely quit and reopen Claude Desktop. AutoCite will appear in the available tools/connectors.
+> Use AutoCite to review and fix every citation in this document. Preserve all non-citation prose and separately list anything requiring source review.
 
-Optional CourtListener verification:
+Optional source retrieval:
 
 ```bash
 autocite setup-claude --courtlistener-token "YOUR_TOKEN"
 ```
 
-CourtListener is contacted only when the model explicitly calls `verify_case_citations`.
+Then ask:
 
-## Option B: ChatGPT through a private OpenAI MCP tunnel
+> Run AutoCite's deep review on the case citations. Compare quotations and pincites with the retrieved opinions, show candidate passages, and do not claim proposition support or good-law status.
 
-This is the recommended ChatGPT route for legal documents that should not be exposed through a public server.
+## Option B: ChatGPT through a private MCP tunnel
 
-### 1. Start AutoCite locally over Streamable HTTP
+This is the recommended ChatGPT route for privileged or confidential documents.
+
+### Start AutoCite locally
 
 ```bash
 AUTOCITE_TRANSPORT=streamable-http autocite-mcp
 ```
 
-The local endpoint is:
+Local endpoint:
 
 ```text
 http://127.0.0.1:8000/mcp
 ```
 
-### 2. Create an OpenAI Secure MCP Tunnel
+Create an OpenAI Secure MCP Tunnel and target the local endpoint. Then in ChatGPT:
 
-Create the tunnel in OpenAI Platform tunnel settings, run `tunnel-client` on the same machine or network as AutoCite, and point its local target to `http://127.0.0.1:8000/mcp`.
+1. Enable Developer mode in settings.
+2. Open Plugins/developer apps.
+3. Create an app named **AutoCite**.
+4. Select the tunnel or enter an authenticated HTTPS `/mcp` URL.
+5. Confirm `review_document`, `review_uploaded_document`, and `open_citecheck_workspace` appear.
 
-OpenAI's current tunnel guide:
+Recommended description:
 
-```text
-https://developers.openai.com/api/docs/guides/secure-mcp-tunnels
-```
+> Reviews, fixes, and evidence-checks legal citations. Always call `review_document` or `review_uploaded_document` before answering citation questions from memory. Never treat candidate passages as a legal conclusion.
 
-### 3. Add AutoCite in ChatGPT
+When a host supports MCP Apps, `open_citecheck_workspace` renders an interactive review surface. Text-only hosts still receive corrected text and structured findings.
 
-1. Open ChatGPT **Settings → Security and login** and enable **Developer mode**.
-2. Open **Settings → Plugins** or `https://chatgpt.com/plugins`.
-3. Select **+** to create a developer-mode app.
-4. Name it **AutoCite**.
-5. Use this description:
+## Option C: Claude web through a remote connector
 
-   > Reviews and fixes legal citations in court filings and legal research. Always call `review_document` before answering citation-format questions.
-
-6. Select the tunnel you created, or enter the hosted HTTPS `/mcp` URL.
-7. Create the app and verify that `review_document` appears in the tool list.
-
-In a chat, enable AutoCite through **+ → More**, then ask:
-
-> Review and fix every citation in this document. Preserve all non-citation prose and separately list anything that still requires source review.
-
-## Option C: Claude web through a remote MCP connector
-
-AutoCite must be available at an internet-reachable HTTPS URL ending in `/mcp`.
+AutoCite must be available at an authenticated internet-reachable HTTPS URL ending in `/mcp`.
 
 For Claude Pro or Max:
 
 1. Open **Customize → Connectors**.
 2. Select **+ → Add custom connector**.
 3. Enter the AutoCite HTTPS `/mcp` URL.
-4. Add the connector, then enable it in a conversation through **+ → Connectors**.
+4. Add and enable it in the conversation.
 
-For Team or Enterprise, an Owner first adds the URL under **Organization settings → Connectors**; members then connect it individually.
+For Team or Enterprise, an Owner first adds the URL under organization connector settings.
 
-## Host AutoCite as an HTTPS MCP server
+## Host AutoCite
 
 ### Docker
 
@@ -131,47 +113,60 @@ MCP endpoint:
 http://localhost:8000/mcp
 ```
 
-Place the container behind an HTTPS reverse proxy, or deploy it to a container platform.
+Place the container behind TLS and an authenticated reverse proxy or private tunnel.
 
 ### Render Blueprint
 
 The repository includes `render.yaml` and a `Dockerfile`.
 
-1. Create a new Render Blueprint from this repository.
+1. Create a Render Blueprint from the repository.
 2. Deploy the `autocite-mcp` service.
-3. Use `https://YOUR-SERVICE.onrender.com/mcp` in Claude or ChatGPT.
-4. Optionally add `COURTLISTENER_TOKEN` as a secret environment variable.
+3. Put authentication in front of the service before using confidential documents.
+4. Use the authenticated HTTPS URL plus `/mcp` in Claude or ChatGPT.
+5. Add `COURTLISTENER_TOKEN` only through secret environment storage.
 
-**Privacy warning:** a no-auth public deployment accepts citation-review requests from anyone who knows the URL. It is suitable for demos or nonconfidential text, not privileged or sensitive legal documents. For sensitive documents, use local Claude Desktop or OpenAI Secure MCP Tunnel. A production multi-user deployment should add OAuth and appropriate access controls before use.
+**Privacy warning:** an unauthenticated public endpoint accepts document-review requests from anyone who knows the URL. It is suitable only for nonconfidential demonstrations. Production hosting must add OAuth or an authenticated proxy, tenant isolation, request limits, secret management, access-log redaction, and no-store caching.
 
-## What the model receives
+## File workflows
 
-`review_document` returns:
+Connected hosts can pass authorized file references to `review_uploaded_document`. The tool expects a file object containing either:
 
-- automatic Bluepages/Whitepages mode selection with confidence and reasons;
-- corrected text containing only deterministic citation edits;
-- exact citation spans and source classifications;
-- applied edits and unresolved issues;
-- source-specific templates, required facts, checks, and rule families;
-- cross-cutting guidance for signals, pincites, parentheticals, source ordering, quotations, and short forms;
-- an explicit response contract that prohibits fabricated citation facts and overclaims.
+- `data_base64`; or
+- an authorized `download_url` supplied by the host.
 
-The model is instructed to use AutoCite rather than rely on general citation memory.
+Optional fields are `file_name` and `mime_type`. The MCP declaration includes ChatGPT's file-parameter metadata for `file`.
+
+Supported formats:
+
+- `.txt`;
+- `.md` / Markdown;
+- `.docx`;
+- searchable/text-based `.pdf`.
+
+Scanned PDFs return `ocr_required`. AutoCite does not retain the file server-side.
+
+## Export workflow
+
+After a review, call `export_review_docx` with `original_text` and `corrected_text`. The tool returns a base64 DOCX with optional tracked insertions and deletions. The export is text-oriented and does not preserve every original style, field, footnote, table, or page layout.
 
 ## Recommended prompts
 
 ### Whole document
 
-> Use AutoCite to review and fix every citation in this document. Preserve all non-citation prose. Return the corrected document first, then a concise list of anything requiring source review.
+> Use AutoCite to review and fix every citation. Preserve non-citation prose. Return the corrected document first, a concise change log second, and a source-review list third.
 
-### Court filing
+### Deep case review
 
-> Citecheck this filing under the Bluepages and the filing court's local rules. Apply safe fixes, verify case citations when available, and flag every unresolved pincite, short-form, or local-rule issue.
+> Use AutoCite deep review. Retrieve the cited cases, compare quotations and pincites, and show the strongest candidate passages. Independently assess whether those passages support the proposition; do not treat lexical scores as a legal conclusion and do not claim good-law status.
 
-### Law review or seminar paper
+### California filing
 
-> Citecheck this document under the Whitepages. Review signals, parentheticals, short forms, source order, pincites, typography, and internet archives. Never invent missing bibliographic facts.
+> Citecheck this filing under AutoCite's California jurisdiction profile and Bluepages mode. Apply deterministic fixes and separately flag every California Style Manual, local-rule, record-citation, and authority-treatment issue requiring verification.
+
+### Law review
+
+> Citecheck this under the Whitepages. Review signals, parentheticals, short forms, source order, pincites, typography, and internet archives. Never invent bibliographic facts.
 
 ## Scope
 
-AutoCite improves citation formatting and gives the host model a structured legal-citation playbook. It does not by itself determine that an authority is good law, controlling, accurately quoted, or supportive of the proposition. Those tasks require substantive source review and, where applicable, citator research.
+AutoCite can verify that retrieved text contains specific metadata, language, or page markers. It can rank candidate passages for review. It cannot determine good-law status, controlling authority, legal proposition support, or treatment. See [`SOURCE_REVIEW.md`](SOURCE_REVIEW.md) and [`SECURITY.md`](SECURITY.md).
