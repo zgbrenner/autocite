@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: autocite-mcp
+    runtime: docker
+    plan: free
+    autoDeploy: true
+    healthCheckPath: /health
+    envVars:
+      - key: AUTOCITE_TRANSPORT
+        value: streamable-http
+      - key: AUTOCITE_HOST
+        value: 0.0.0.0
+      - key: COURTLISTENER_TOKEN
+        sync: false
