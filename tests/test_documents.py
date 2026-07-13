@@ -13,7 +13,7 @@ from autocite_mcp.documents import (
 
 
 def test_loads_plain_text_and_markdown():
-    plain = load_document_bytes(b"42 USC Â42 USC \xc2§42 USC \xc2\xa71983", "brief.txt", "text/plain")
+    plain = load_document_bytes("42 USC §1983".encode("utf-8"), "brief.txt", "text/plain")
     assert plain.text == "42 USC §1983"
     markdown = load_document_bytes(b"# Note\n\n576 U.S. 644", "note.md", "text/markdown")
     assert "576 U.S. 644" in markdown.text
