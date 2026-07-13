@@ -29,6 +29,14 @@ def test_convert_case_citation_to_bluepages_markdown():
     assert result["converted"] == "*Obergefell v. Hodges*, 576 U.S. 644, 675 (2015)"
 
 
+def test_convert_state_statute_without_fabricating_title():
+    result = convert_citation(
+        "Mass. Gen. Laws ch. 1, § 2 (West 1999)",
+        target_mode="whitepages",
+    )
+    assert result["converted"] == "Mass. Gen. Laws ch. 1, § 2 (West 1999)"
+
+
 def test_explain_issue_returns_mode_specific_rule():
     result = explain_issue("REPORTER_ABBREVIATION", mode="whitepages")
     assert result["rule"] == "Rule 10"
