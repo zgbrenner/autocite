@@ -10,6 +10,10 @@ class FakeSourceClient:
 
     async def lookup_and_fetch(self, text):
         self.calls += 1
+        analysis_text = (
+            "Unrelated procedural background. " * 600
+            + "*675 The right to marry is fundamental under the Constitution."
+        )
         return {
             "available": True,
             "provider": "CourtListener",
@@ -20,7 +24,9 @@ class FakeSourceClient:
                     "status": 200,
                     "case_name": "Obergefell v. Hodges",
                     "source_url": "https://www.courtlistener.com/opinion/2812209/obergefell-v-hodges/",
-                    "source_text": "*675 The right to marry is fundamental under the Constitution.",
+                    "analysis_text": analysis_text,
+                    "source_text": analysis_text[:12_000],
+                    "source_text_truncated": True,
                     "later_citation_metadata": {
                         "citation_count": 1000,
                         "classification": "not_a_citator",
@@ -31,7 +37,7 @@ class FakeSourceClient:
 
 
 @pytest.mark.asyncio
-async def test_deep_reviewer_builds_evidence_records():
+async def test_deep_reviewer_builds_evidence_records_from_full_opinion():
     text = 'The Court stated “the right to marry is fundamental.” Obergefell v. Hodges, 576 U.S. 644, 675 (2015).'
     citations = [
         {
@@ -43,9 +49,13 @@ async def test_deep_reviewer_builds_evidence_records():
         }
     ]
     result = await DeepReviewer(source_client=FakeSourceClient()).review(text, citations)
+    case = result["cases"][0]
     assert result["available"] is True
-    assert result["cases"][0]["authority"]["case_name"] == "Obergefell v. Hodges"
-    assert result["cases"][0]["evidence"]["proposition"]["requires_legal_judgment"] is True
+    assert case["authority"]["case_name"] == "Obergefell v. Hodges"
+    assert "analysis_text" not in case["authority"]
+    assert case["evidence"]["quotation"]["status"] in {"exact", "normalized"}
+    assert case["evidence"]["pincite"]["status"] == "confirmed_by_page_marker"
+    assert case["evidence"]["proposition"]["requires_legal_judgment"] is True
 
 
 @pytest.mark.asyncio
