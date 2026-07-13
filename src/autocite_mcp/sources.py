@@ -77,9 +77,14 @@ class CourtListenerSourceClient:
                     for cluster in clusters:
                         cluster = await self._ensure_cluster(client, cluster)
                         opinions = await self._fetch_opinions(client, cluster)
-                        source_text = self._combine_opinion_text(opinions)
+                        analysis_text = self._combine_opinion_text(opinions)
                         authorities.append(
-                            self._authority_record(lookup, cluster, opinions, source_text)
+                            self._authority_record(
+                                lookup,
+                                cluster,
+                                opinions,
+                                analysis_text,
+                            )
                         )
         except httpx.HTTPStatusError as exc:
             return {
@@ -157,14 +162,14 @@ class CourtListenerSourceClient:
             remaining -= len(text)
             if remaining <= 0:
                 break
-        return "\n\n".join(parts)[:MAX_EXPOSED_SOURCE_CHARS]
+        return "\n\n".join(parts)[:MAX_INTERNAL_OPINION_CHARS]
 
     def _authority_record(
         self,
         lookup: dict[str, Any],
         cluster: dict[str, Any],
         opinions: list[dict[str, Any]],
-        source_text: str,
+        analysis_text: str,
     ) -> dict[str, Any]:
         return {
             "citation": lookup.get("citation"),
@@ -178,8 +183,9 @@ class CourtListenerSourceClient:
             "date_filed": cluster.get("date_filed"),
             "source_url": self._absolute_url(str(cluster.get("absolute_url") or "")),
             "opinion_ids": [item.get("id") for item in opinions if item.get("id") is not None],
-            "source_text": source_text,
-            "source_text_truncated": len(source_text) >= MAX_EXPOSED_SOURCE_CHARS,
+            "analysis_text": analysis_text,
+            "source_text": analysis_text[:MAX_EXPOSED_SOURCE_CHARS],
+            "source_text_truncated": len(analysis_text) > MAX_EXPOSED_SOURCE_CHARS,
             "later_citation_metadata": {
                 "citation_count": cluster.get("citation_count"),
                 "classification": "not_a_citator",
@@ -197,6 +203,7 @@ class CourtListenerSourceClient:
             "end_index": lookup.get("end_index"),
             "case_name": "",
             "source_url": "",
+            "analysis_text": "",
             "source_text": "",
             "error_message": lookup.get("error_message") or "Citation was not matched to a CourtListener authority.",
             "later_citation_metadata": {
