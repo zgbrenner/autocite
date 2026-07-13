@@ -54,7 +54,7 @@ def test_remote_file_urls_require_public_https():
 
 
 def test_build_review_docx_contains_tracked_changes():
-    payload = build_review_docx("42 USC §1983", "42 U.S.C. § 1983", tracked=True)
+    payload = build_review_docx("id", "Id.", tracked=True)
     with zipfile.ZipFile(io.BytesIO(payload)) as archive:
         xml = archive.read("word/document.xml").decode("utf-8")
     assert "w:ins" in xml
