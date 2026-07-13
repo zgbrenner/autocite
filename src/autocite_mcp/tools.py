@@ -86,16 +86,33 @@ def convert_citation(
             "case", components, mode=mode, output_style=output_style
         )
     elif source_type in {"statute", "regulation"}:
-        converted = generate_citation(
-            source_type,
-            {
-                "title": components["title"],
-                "code": components["code"],
-                "section": components["section"],
-            },
-            mode=mode,
-            output_style=output_style,
-        )
+        if components.get("title"):
+            converted = generate_citation(
+                source_type,
+                {
+                    "title": components["title"],
+                    "code": components["code"],
+                    "section": components["section"],
+                },
+                mode=mode,
+                output_style=output_style,
+            )
+        elif source_type == "statute" and components.get("chapter"):
+            converted = (
+                f"{components['code']} ch. {components['chapter']}, "
+                f"§ {components['section']}"
+            )
+            parenthetical = " ".join(
+                value
+                for key in ("publisher", "year")
+                if (value := components.get(key))
+            )
+            if parenthetical:
+                converted += f" ({parenthetical})"
+        else:
+            raise ValueError(
+                "Citation lacks the title or chapter metadata required for safe conversion"
+            )
     elif source_type == "constitution":
         converted = generate_citation(
             "constitution",
