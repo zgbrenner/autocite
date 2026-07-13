@@ -38,7 +38,7 @@ dev = [
 ]
 
 [project.scripts]
-autocite-mcp = "autocite_mcp.server:main"
+autocite-mcp = "autocite_mcp.hosting:main"
 autocite = "autocite_mcp.cli:main"
 
 [tool.hatch.build.targets.wheel]
@@ -47,7 +47,6 @@ packages = ["src/autocite_mcp"]
 [tool.hatch.build.targets.sdist]
 exclude = [
   "/reference",
-  "/THIRD_PARTY_NOTICES.md",
   "/docs/superpowers",
 ]
 
