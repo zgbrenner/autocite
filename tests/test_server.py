@@ -11,6 +11,11 @@ async def test_mcp_exposes_expected_tools_resources_and_prompts() -> None:
 
     assert {tool.name for tool in tools} == {
         "review_document",
+        "review_uploaded_document",
+        "export_review_docx",
+        "open_citecheck_workspace",
+        "get_jurisdiction_profile",
+        "list_jurisdiction_profiles",
         "get_citation_guidance",
         "check_citations",
         "fix_citations",
@@ -24,6 +29,7 @@ async def test_mcp_exposes_expected_tools_resources_and_prompts() -> None:
     assert {str(resource.uri) for resource in resources} == {
         "autocite://capabilities",
         "autocite://knowledge/core",
+        "ui://autocite/citecheck-v1.html",
     }
     assert {str(template.uriTemplate) for template in templates} == {
         "autocite://rules/{mode}",
@@ -36,6 +42,11 @@ async def test_mcp_exposes_expected_tools_resources_and_prompts() -> None:
         "citation_repair",
     }
 
+    uploaded = next(tool for tool in tools if tool.name == "review_uploaded_document")
+    assert uploaded.meta["openai/fileParams"] == ["file"]
+    workspace = next(tool for tool in tools if tool.name == "open_citecheck_workspace")
+    assert workspace.meta["ui"]["resourceUri"] == "ui://autocite/citecheck-v1.html"
+
 
 async def test_http_health_route_is_available() -> None:
     import json
@@ -46,5 +57,6 @@ async def test_http_health_route_is_available() -> None:
     response = await health_check(None)  # type: ignore[arg-type]
     payload = json.loads(response.body)
     assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
     assert payload["service"] == "autocite-mcp"
     assert payload["mcp_endpoint"] == "/mcp"
