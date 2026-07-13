@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "autocite-mcp"
-version = "0.1.0"
-description = "Conservative Bluepages and Whitepages legal citation checker, fixer, generator, and verifier exposed through MCP."
+version = "0.2.0"
+description = "LLM-ready Bluepages and Whitepages legal citation reviewer with automatic mode selection, citation knowledge, and local or hosted MCP connections."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
