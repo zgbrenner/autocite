@@ -41,7 +41,7 @@ A question remains unresolved when the citation is ambiguous, the source cannot 
 
 ## Treatment and later citations
 
-CourtListener may expose a count of later citations. AutoCite reports this only as contextual metadata and labels it `not_a_citator`. A citation count does not distinguish positive, negative, neutral, or precedential treatment and is not Shepardizing, KeyCiting, or a substitute for a licensed citator.
+CourtListener may expose a count of later citations. AutoCite reports this only as contextual metadata and labels it `not_a_citator`—in plain terms, it is **not a citator**. A citation count does not distinguish positive, negative, neutral, or precedential treatment and is not Shepardizing, KeyCiting, or a substitute for a licensed citator.
 
 ## Source limitations
 
