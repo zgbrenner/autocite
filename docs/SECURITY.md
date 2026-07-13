@@ -10,7 +10,9 @@ For privileged, confidential, sealed, or personally sensitive legal material, us
 
 ## Network disclosure
 
-The deterministic citation checker does not require network access. AutoCite contacts CourtListener only when the caller explicitly enables `deep_review`, `verify_cases`, or a verification tool and a `COURTLISTENER_TOKEN` is configured. Deep review may transmit citation-bearing document text to CourtListener's citation lookup endpoint so citations can be aligned with authorities.
+The deterministic citation checker does not require network access. AutoCite contacts CourtListener only when the caller explicitly enables `deep_review`, `verify_cases`, or a verification tool and a `COURTLISTENER_TOKEN` is configured.
+
+Deep review sends only the full case-citation strings extracted from the document to CourtListener's citation lookup endpoint. It does not send the surrounding propositions, quotations, client facts, or the complete document. Quotation and proposition comparisons occur locally against retrieved opinion text.
 
 ## Retrieved-text prompt injection
 
@@ -21,12 +23,15 @@ Opinion text, docket material, HTML, and any other retrieved source content are 
 - Supported uploads are TXT, Markdown, DOCX, and text-based PDF.
 - Input size is limited to 15 MB.
 - Image-only or scanned PDFs return `ocr_required`; AutoCite does not silently rely on incomplete extraction.
+- Remote file URLs must use public HTTPS, and redirects and resolved addresses are checked against private or reserved networks.
 - Generated DOCX files are assembled in memory and returned as base64.
 - Exported DOCX files preserve text-level insertions and deletions, not all source layout, styles, fields, footnotes, or pagination.
 
 ## Hosting
 
-The included container and Render configuration are suitable for private deployments and nonconfidential demonstrations. A production multi-user service must add authentication and tenant isolation through one of these patterns:
+The hosted entry point supports an optional shared bearer gate through `AUTOCITE_API_TOKEN`. This is useful for private single-tenant deployments, but it is not a complete user identity or OAuth system. See [`HOSTING.md`](HOSTING.md).
+
+A production multi-user service must add authentication and tenant isolation through one of these patterns:
 
 1. OAuth-compliant MCP authorization.
 2. An authenticated reverse proxy that validates every `/mcp` request.
@@ -36,7 +41,7 @@ Also configure TLS, request-size limits, rate limits, secret management, access-
 
 ## Secrets
 
-`COURTLISTENER_TOKEN` is optional. Keep it in environment or platform secret storage. Do not embed it in repository files, Docker images, client-shared URLs, issue reports, or exported artifacts.
+`COURTLISTENER_TOKEN` and `AUTOCITE_API_TOKEN` are optional. Keep them in environment or platform secret storage. Do not embed them in repository files, Docker images, client-shared URLs, issue reports, or exported artifacts.
 
 ## Legal-reliability boundary
 
