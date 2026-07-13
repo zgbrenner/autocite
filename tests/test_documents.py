@@ -9,6 +9,7 @@ from autocite_mcp.documents import (
     DocumentLoadError,
     build_review_docx,
     load_document_bytes,
+    validate_download_url,
 )
 
 
@@ -37,6 +38,19 @@ def test_scanned_pdf_requires_ocr():
     with pytest.raises(DocumentLoadError) as exc:
         load_document_bytes(minimal_pdf, "scan.pdf", "application/pdf")
     assert exc.value.code == "ocr_required"
+
+
+def test_remote_file_urls_require_public_https():
+    assert validate_download_url("https://files.example.com/document.docx").startswith("https://")
+    for url in (
+        "http://files.example.com/document.docx",
+        "https://127.0.0.1/document.docx",
+        "https://169.254.169.254/latest/meta-data/",
+        "https://localhost/document.docx",
+    ):
+        with pytest.raises(DocumentLoadError) as exc:
+            validate_download_url(url)
+        assert exc.value.code == "unsafe_download_url"
 
 
 def test_build_review_docx_contains_tracked_changes():
