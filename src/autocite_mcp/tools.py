@@ -16,6 +16,12 @@ from .jurisdictions import (
 )
 from .knowledge import get_knowledge_pack, infer_citation_mode
 from .rules import RULE_CATALOG, rule_reference, validate_mode
+from .slm_runtime import (
+    DEFAULT_MODEL,
+    SLMRuntime,
+    TransformersSLMRuntime,
+    run_hybrid_review,
+)
 from .verifiers import CourtListenerVerifier
 
 _ENGINE = CitationEngine()
@@ -32,6 +38,11 @@ async def review_document(
     verify_cases: bool = False,
     deep_review: bool = False,
     include_source_text: bool = False,
+    use_slm: bool = False,
+    model_path: str = DEFAULT_MODEL,
+    slm_only: bool = False,
+    apply_slm_fixes: bool = False,
+    _slm_runtime: SLMRuntime | None = None,
 ) -> dict[str, Any]:
     """Primary end-to-end citecheck workflow intended for LLM hosts."""
     if not text.strip():
@@ -47,9 +58,36 @@ async def review_document(
         resolved_mode,
     )
     initial = _ENGINE.analyze(text, mode=resolved_mode)
-    fixed = _ENGINE.fix(text, mode=resolved_mode) if apply_safe_fixes else None
+    fixed = (
+        _ENGINE.fix(text, mode=resolved_mode)
+        if apply_safe_fixes and not slm_only
+        else None
+    )
     corrected_text = fixed["fixed_text"] if fixed else text
     final = _ENGINE.analyze(corrected_text, mode=resolved_mode)
+    if use_slm or slm_only:
+        runtime = _slm_runtime or TransformersSLMRuntime(model_path)
+        slm_review = await run_hybrid_review(
+            corrected_text,
+            mode=resolved_mode,
+            deterministic_result=final,
+            runtime=runtime,
+            apply_slm_fixes=apply_slm_fixes,
+        )
+        if slm_review["corrected_text"] != corrected_text:
+            corrected_text = str(slm_review["corrected_text"])
+            final = _ENGINE.analyze(corrected_text, mode=resolved_mode)
+    else:
+        slm_review = {
+            "status": "not_requested",
+            "model": model_path,
+            "corrected_text": corrected_text,
+            "suggestions": [],
+            "rejected": [],
+            "applied": [],
+            "applied_count": 0,
+            "fallback_reason": None,
+        }
     source_types = list(final["summary"]["by_source_type"])
 
     if verify_cases:
@@ -101,6 +139,7 @@ async def review_document(
         "knowledge": knowledge,
         "case_verification": verification,
         "deep_review_results": deep_results,
+        "slm_review": slm_review,
         "confidence_legend": {
             "deterministic": (
                 "A code path produced this formatting or exact-comparison result."
@@ -153,6 +192,11 @@ async def review_uploaded_document(
     apply_safe_fixes: bool = True,
     deep_review: bool = False,
     include_source_text: bool = False,
+    use_slm: bool = False,
+    model_path: str = DEFAULT_MODEL,
+    slm_only: bool = False,
+    apply_slm_fixes: bool = False,
+    _slm_runtime: SLMRuntime | None = None,
 ) -> dict[str, Any]:
     """Review an authorized MCP file reference or a base64 document payload."""
     filename = str(file.get("file_name") or file.get("filename") or "document.txt")
@@ -181,6 +225,11 @@ async def review_uploaded_document(
         apply_safe_fixes=apply_safe_fixes,
         deep_review=deep_review,
         include_source_text=include_source_text,
+        use_slm=use_slm,
+        model_path=model_path,
+        slm_only=slm_only,
+        apply_slm_fixes=apply_slm_fixes,
+        _slm_runtime=_slm_runtime,
     )
     result["input_document"] = {
         "filename": loaded.filename,
@@ -398,6 +447,20 @@ def list_capabilities() -> dict[str, Any]:
     return {
         "primary_workflow": "review_document",
         "automatic_mode_detection": True,
+        "local_slm": {
+            "available": True,
+            "optional": True,
+            "default_model": DEFAULT_MODEL,
+            "default_behavior": "disabled",
+            "applies_edits_only_when": "explicitly enabled and safety-validated",
+            "fallback": "deterministic citation review",
+            "never_claims": [
+                "good-law status",
+                "controlling authority",
+                "legal proposition support",
+                "verified missing citation facts",
+            ],
+        },
         "deep_review": {
             "available": True,
             "provider": "CourtListener",

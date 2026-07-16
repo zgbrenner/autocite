@@ -5,6 +5,8 @@ AutoCite turns Claude or ChatGPT into a safer legal-citation specialist for:
 - **Bluepages** — briefs, motions, pleadings, court filings, and practitioner memoranda.
 - **Whitepages** — law reviews, student notes, seminar papers, and academic legal research.
 
+AutoCite 0.4 also includes an optional local SLM layer based on `Qwen/Qwen3.5-0.8B`. The model can classify ambiguous citation issues and propose structured repairs, but deterministic validation remains in control of every automatic edit.
+
 The normal workflow remains simple: connect AutoCite, provide text or a document, and ask the model to fix the citations. AutoCite detects the appropriate mode, applies deterministic fixes, supplies citation-rule knowledge, and—when explicitly requested—retrieves case authority to compare quotations, page markers, and candidate supporting passages.
 
 ## Install in three minutes
@@ -125,6 +127,21 @@ Review text:
 ```bash
 uv run autocite review "See 42 USC §1983."
 ```
+
+Enable optional local SLM suggestions:
+
+```bash
+uv sync --extra slm
+uv run autocite review "See 42 USC §1983." --slm
+```
+
+SLM suggestions are not applied by default. To apply only high-confidence proposals that pass AutoCite's span and anti-fabrication checks:
+
+```bash
+uv run autocite review "See 42 USC §1983." --slm --apply-slm-fixes
+```
+
+The first SLM run downloads the configured model. Ordinary AutoCite review does not load or download model weights. See [`docs/SLM.md`](docs/SLM.md) for architecture, privacy, training, and evaluation details.
 
 Review a DOCX or text PDF:
 

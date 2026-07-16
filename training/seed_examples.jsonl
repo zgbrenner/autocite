@@ -1,0 +1,8 @@
+{"citation":"See, e.g., Brown v. Board of Education, 347 U.S. 483, 495 (1954)","proposed":"See, e.g., Brown v. Board of Education, 347 U.S. 483, 495 (1954)","mode":"bluepages","source_type":"case","issue_code":"NO_CHANGE","group":"seed-brown-blue","explanation":"The citation contains the supplied case name, reporter, pincite, and year."}
+{"citation":"id. at 496","proposed":"Id. at 496","mode":"bluepages","source_type":"short_form","issue_code":"SHORT_FORM_CAPITALIZATION","group":"seed-id-blue"}
+{"citation":"42 USC §§1981-1983","proposed":"42 U.S.C. §§ 1981-1983","mode":"bluepages","source_type":"statute","issue_code":"STATUTE_CODE_ABBREVIATION","group":"seed-statute-blue"}
+{"citation":"https://example.org/report","proposed":null,"mode":"bluepages","source_type":"internet","issue_code":"INSUFFICIENT_INFORMATION","group":"seed-internet-blue","missing_facts":["author","page title","publication date"]}
+{"citation":"Obergefell v. Hodges, 576 U.S. 644, 675 (2015)","proposed":"Obergefell v. Hodges, 576 U.S. 644, 675 (2015)","mode":"whitepages","source_type":"case","issue_code":"NO_CHANGE","group":"seed-obergefell-white"}
+{"citation":"id at 675","proposed":"Id. at 675","mode":"whitepages","source_type":"short_form","issue_code":"SHORT_FORM_CAPITALIZATION","group":"seed-id-white"}
+{"citation":"17 CFR §240.10b-5","proposed":"17 C.F.R. § 240.10b-5","mode":"whitepages","source_type":"regulation","issue_code":"REGULATION_CODE_ABBREVIATION","group":"seed-reg-white"}
+{"citation":"The Law of Artificial Intelligence","proposed":null,"mode":"whitepages","source_type":"book","issue_code":"INSUFFICIENT_INFORMATION","group":"seed-book-white","missing_facts":["author","edition","publisher","year"]}

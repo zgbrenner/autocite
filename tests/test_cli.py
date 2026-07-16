@@ -19,3 +19,24 @@ def test_cli_exposes_deep_review_and_export_commands():
 
     evaluation = parser.parse_args(["eval", "--file", "evals/gold.jsonl"])
     assert evaluation.command == "eval"
+
+
+def test_cli_exposes_optional_slm_review_flags():
+    parser = build_parser()
+    args = parser.parse_args(
+        [
+            "review",
+            "See 42 USC §1983.",
+            "--slm",
+            "--model-path",
+            "local/autocite",
+            "--apply-slm-fixes",
+        ]
+    )
+    assert args.slm is True
+    assert args.model_path == "local/autocite"
+    assert args.apply_slm_fixes is True
+    assert args.slm_only is False
+
+    only = parser.parse_args(["review", "Id. at 4.", "--slm-only"])
+    assert only.slm_only is True

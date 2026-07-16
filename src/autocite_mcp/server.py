@@ -91,6 +91,10 @@ async def review_document(
     verify_cases: bool = False,
     deep_review: bool = False,
     include_source_text: bool = False,
+    use_slm: bool = False,
+    model_path: str = "Qwen/Qwen3.5-0.8B",
+    slm_only: bool = False,
+    apply_slm_fixes: bool = False,
 ) -> dict[str, Any]:
     """Start here for citation review in legal writing.
 
@@ -108,6 +112,10 @@ async def review_document(
         verify_cases=verify_cases,
         deep_review=deep_review,
         include_source_text=include_source_text,
+        use_slm=use_slm,
+        model_path=model_path,
+        slm_only=slm_only,
+        apply_slm_fixes=apply_slm_fixes,
     )
 
 
@@ -124,6 +132,10 @@ async def review_uploaded_document(
     apply_safe_fixes: bool = True,
     deep_review: bool = False,
     include_source_text: bool = False,
+    use_slm: bool = False,
+    model_path: str = "Qwen/Qwen3.5-0.8B",
+    slm_only: bool = False,
+    apply_slm_fixes: bool = False,
 ) -> dict[str, Any]:
     """Review TXT, Markdown, DOCX, or text-based PDF from an authorized file reference.
 
@@ -138,6 +150,10 @@ async def review_uploaded_document(
         apply_safe_fixes=apply_safe_fixes,
         deep_review=deep_review,
         include_source_text=include_source_text,
+        use_slm=use_slm,
+        model_path=model_path,
+        slm_only=slm_only,
+        apply_slm_fixes=apply_slm_fixes,
     )
 
 

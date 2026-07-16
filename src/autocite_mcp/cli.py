@@ -43,6 +43,10 @@ def _add_review_options(command: argparse.ArgumentParser) -> None:
     command.add_argument("--verify-cases", action="store_true")
     command.add_argument("--deep-review", action="store_true")
     command.add_argument("--include-source-text", action="store_true")
+    command.add_argument("--slm", action="store_true", help="Enable optional local SLM review")
+    command.add_argument("--model-path", default="Qwen/Qwen3.5-0.8B")
+    command.add_argument("--slm-only", action="store_true", help="Skip deterministic edits for evaluation")
+    command.add_argument("--apply-slm-fixes", action="store_true")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -120,6 +124,10 @@ def main() -> None:
                     verify_cases=args.verify_cases,
                     deep_review=args.deep_review,
                     include_source_text=args.include_source_text,
+                    use_slm=args.slm or args.slm_only,
+                    model_path=args.model_path,
+                    slm_only=args.slm_only,
+                    apply_slm_fixes=args.apply_slm_fixes,
                 )
             )
         )
@@ -140,6 +148,10 @@ def main() -> None:
                     apply_safe_fixes=not args.no_fix,
                     deep_review=args.deep_review,
                     include_source_text=args.include_source_text,
+                    use_slm=args.slm or args.slm_only,
+                    model_path=args.model_path,
+                    slm_only=args.slm_only,
+                    apply_slm_fixes=args.apply_slm_fixes,
                 )
             )
         )

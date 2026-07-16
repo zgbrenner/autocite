@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "autocite-mcp"
-version = "0.3.0"
+version = "0.4.0"
 description = "Evidence-backed Bluepages and Whitepages legal citation reviewer with document workflows, jurisdiction profiles, and MCP workspace support."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -31,6 +31,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+slm = [
+  "accelerate>=1.10,<2",
+  "torch>=2.4",
+  "transformers>=4.57,<6",
+]
 dev = [
   "pytest>=8,<10",
   "pytest-asyncio>=0.24,<2",
@@ -48,6 +53,8 @@ packages = ["src/autocite_mcp"]
 exclude = [
   "/reference",
   "/docs/superpowers",
+  "/outputs",
+  "/training/autocite_slm.jsonl",
 ]
 
 [tool.pytest.ini_options]
