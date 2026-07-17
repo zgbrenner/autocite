@@ -24,11 +24,11 @@ async def _generate(model: LocalQwenProposalModel, task: CitationTask) -> Citati
 def _task(text: str, source_type: str, issue_code: str) -> CitationTask:
     return CitationTask(
         citation_text=text,
-        citation_start=0,
-        citation_end=len(text),
+        citation_start=4,
+        citation_end=4 + len(text),
         source_type=source_type,
         mode="bluepages",
-        context=text,
+        context=f"See {text}.",
         context_start=0,
         deterministic_issues=({"code": issue_code},),
         components={},
