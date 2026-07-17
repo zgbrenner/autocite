@@ -207,6 +207,8 @@ uv run autocite-mcp
 
 Local profiles, offline installation, model verification, health diagnostics, and host configuration are in [`docs/LOCAL_INSTALL.md`](docs/LOCAL_INSTALL.md).
 
+Install the optional local desktop shell with `uv tool install 'autocite-mcp[desktop]'`, then run `autocite-desktop`. See [`docs/DESKTOP.md`](docs/DESKTOP.md) for supported workflow and disclosed UI limitations.
+
 Optional loopback HTTP mode:
 
 ```bash

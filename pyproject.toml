@@ -50,6 +50,8 @@ retrieval-reranker = [
 experimental-gliner = [
   "gliner>=0.2,<1",
 ]
+desktop = ["PySide6>=6.7,<7"]
+desktop-build = ["PyInstaller>=6,<7", "PySide6>=6.7,<7"]
 dev = [
   "pytest>=8,<10",
   "pytest-asyncio>=0.24,<2",
@@ -59,6 +61,7 @@ dev = [
 [project.scripts]
 autocite-mcp = "autocite_mcp.hosting:main"
 autocite = "autocite_mcp.cli:main"
+autocite-desktop = "autocite_mcp.desktop:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/autocite_mcp"]
