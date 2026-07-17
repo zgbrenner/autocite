@@ -12,6 +12,7 @@ from starlette.responses import JSONResponse
 from . import __version__
 from .formatters import generate_citation as _generate_citation
 from .knowledge import CORE_RULES, get_knowledge_pack
+from .proposal_models import enforce_model_source_policy
 from .rules import RULE_CATALOG, validate_mode
 from .slm_runtime import DEFAULT_MODEL
 from .tools import (
@@ -126,6 +127,11 @@ async def review_document(
     primary-authority retrieval, quotation comparison, page-marker checks, and candidate
     supporting passages. Deep review never determines legal support or good-law status.
     """
+    enforce_model_source_policy(
+        model_path=model_path,
+        base_model_id=base_model_id,
+        offline_only=model_offline_only,
+    )
     return await _review_document(
         text,
         document_type=document_type,
@@ -190,6 +196,11 @@ async def review_uploaded_document(
     The file object must contain data_base64 or an authorized download_url, plus optional
     file_name and mime_type. Scanned PDFs return an OCR-required error rather than partial text.
     """
+    enforce_model_source_policy(
+        model_path=model_path,
+        base_model_id=base_model_id,
+        offline_only=model_offline_only,
+    )
     return await _review_uploaded_document(
         file,
         document_type=document_type,

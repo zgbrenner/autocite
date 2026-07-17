@@ -8,11 +8,32 @@ from typing import Any
 import httpx
 from bs4 import BeautifulSoup
 
+from . import __version__
+
 COURTLISTENER_BASE = "https://www.courtlistener.com"
 COURTLISTENER_LOOKUP = f"{COURTLISTENER_BASE}/api/rest/v4/citation-lookup/"
 MAX_LOOKUP_TEXT = 64_000
 MAX_INTERNAL_OPINION_CHARS = 200_000
 MAX_EXPOSED_SOURCE_CHARS = 12_000
+MAX_OPINIONS_PER_CLUSTER = 5
+MAX_CLUSTER_FETCHES = 40
+
+
+def _validated_courtlistener_url(url: str) -> str | None:
+    """Allow follow-up GETs only against CourtListener itself.
+
+    Cluster and opinion URLs come from API response payloads; the bearer token in
+    self.headers must never be sent to any other host.
+    """
+    from urllib.parse import urlparse
+
+    parsed = urlparse(str(url or ""))
+    if parsed.scheme != "https":
+        return None
+    host = (parsed.hostname or "").lower().rstrip(".")
+    if host not in {"www.courtlistener.com", "courtlistener.com"}:
+        return None
+    return url
 
 
 def html_to_text(value: str) -> str:
@@ -43,7 +64,7 @@ class CourtListenerSourceClient:
         return {
             "Authorization": f"Token {self.token}",
             "Accept": "application/json",
-            "User-Agent": "autocite-mcp/0.3",
+            "User-Agent": f"autocite-mcp/{__version__}",
         }
 
     async def lookup_and_fetch(self, text: str) -> dict[str, Any]:
@@ -69,12 +90,22 @@ class CourtListenerSourceClient:
                 response.raise_for_status()
                 lookup_payload = response.json()
                 authorities: list[dict[str, Any]] = []
+                cluster_budget = MAX_CLUSTER_FETCHES
                 for lookup in lookup_payload:
                     clusters = lookup.get("clusters") or []
                     if not clusters:
                         authorities.append(self._unmatched_record(lookup))
                         continue
                     for cluster in clusters:
+                        if cluster_budget <= 0:
+                            record = self._unmatched_record(lookup)
+                            record["error_message"] = (
+                                "Cluster retrieval budget exhausted for this review; "
+                                "re-run deep review on a smaller portion of the document."
+                            )
+                            authorities.append(record)
+                            continue
+                        cluster_budget -= 1
                         cluster = await self._ensure_cluster(client, cluster)
                         opinions = await self._fetch_opinions(client, cluster)
                         analysis_text = self._combine_opinion_text(opinions)
@@ -123,13 +154,19 @@ class CourtListenerSourceClient:
         )
         if not url:
             return cluster
+        url = _validated_courtlistener_url(url)
+        if not url:
+            return cluster
         response = await client.get(url, headers=self.headers)
         response.raise_for_status()
         return response.json()
 
     async def _fetch_opinions(self, client: Any, cluster: dict[str, Any]) -> list[dict[str, Any]]:
         opinions: list[dict[str, Any]] = []
-        for url in (cluster.get("sub_opinions") or [])[:5]:
+        for url in (cluster.get("sub_opinions") or [])[:MAX_OPINIONS_PER_CLUSTER]:
+            url = _validated_courtlistener_url(url)
+            if not url:
+                continue
             response = await client.get(url, headers=self.headers)
             response.raise_for_status()
             opinions.append(response.json())

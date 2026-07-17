@@ -378,10 +378,27 @@ def parse_markdown_ir(
     )
 
 
+# The 15 MB upload cap bounds only the compressed archive; cap what any single
+# XML part may decompress to so a crafted DOCX cannot balloon in memory.
+MAX_DOCX_XML_BYTES = 50 * 1024 * 1024
+
+
+def _read_docx_xml(archive: zipfile.ZipFile, path: str) -> ET.Element:
+    info = archive.getinfo(path)
+    if info.file_size > MAX_DOCX_XML_BYTES:
+        raise ValueError(f"DOCX part {path} exceeds the decompressed size limit")
+    data = archive.read(path)
+    # Well-formed DOCX parts never carry a DTD; entity declarations are the
+    # expansion ("billion laughs") vector for xml.etree's expat parser.
+    if b"<!DOCTYPE" in data or b"<!ENTITY" in data:
+        raise ValueError(f"DOCX part {path} contains a prohibited document type declaration")
+    return ET.fromstring(data)
+
+
 def _relationships(archive: zipfile.ZipFile, path: str) -> dict[str, str]:
     if path not in archive.namelist():
         return {}
-    root = ET.fromstring(archive.read(path))
+    root = _read_docx_xml(archive, path)
     return {
         str(node.attrib.get("Id")): str(node.attrib.get("Target"))
         for node in root.findall(f"{{{PKG_REL_NS}}}Relationship")
@@ -425,7 +442,7 @@ def _paragraph_content(node: ET.Element, note_numbers: Mapping[str, str]) -> tup
 def _core_metadata(archive: zipfile.ZipFile, filename: str) -> DocumentMetadata:
     if "docProps/core.xml" not in archive.namelist():
         return _metadata(filename, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
-    root = ET.fromstring(archive.read("docProps/core.xml"))
+    root = _read_docx_xml(archive, "docProps/core.xml")
     def value(namespace: str, name: str) -> str | None:
         return root.findtext(f"{{{namespace}}}{name}")
     return _metadata(
@@ -448,7 +465,7 @@ def parse_docx_ir(payload: bytes, *, filename: str = "document.docx") -> Documen
     ):
         if path not in archive.namelist():
             continue
-        root = ET.fromstring(archive.read(path))
+        root = _read_docx_xml(archive, path)
         visible = [
             node
             for node in root.findall(f"w:{element_name}", NS)
@@ -472,7 +489,7 @@ def parse_docx_ir(payload: bytes, *, filename: str = "document.docx") -> Documen
     footnote_numbers = {spec["note_id"]: spec["number"] for spec in note_specs if spec["kind"] == "footnote"}
     endnote_numbers = {spec["note_id"]: spec["number"] for spec in note_specs if spec["kind"] == "endnote"}
     relationships = _relationships(archive, "word/_rels/document.xml.rels")
-    root = ET.fromstring(archive.read("word/document.xml"))
+    root = _read_docx_xml(archive, "word/document.xml")
     body = root.find("w:body", NS)
     specs: list[dict[str, Any]] = []
     if body is not None:
