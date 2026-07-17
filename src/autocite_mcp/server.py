@@ -33,6 +33,7 @@ from .tools import (
     verify_case_citations as _verify_case_citations,
 )
 from .workspace import WORKSPACE_HTML, workspace_payload
+from .local_product import health_report
 
 _HOST = os.getenv("AUTOCITE_HOST", "127.0.0.1")
 _PORT = int(os.getenv("PORT", os.getenv("AUTOCITE_PORT", "8000")))
@@ -69,7 +70,7 @@ mcp = FastMCP(
 
 
 @mcp.custom_route("/health", methods=["GET"], include_in_schema=False)
-async def health_check(request: Request) -> JSONResponse:
+async def health_route(request: Request) -> JSONResponse:
     """Public liveness endpoint for container platforms and connector diagnostics."""
     return JSONResponse(
         {
@@ -80,6 +81,12 @@ async def health_check(request: Request) -> JSONResponse:
         },
         headers={"Cache-Control": "no-store"},
     )
+
+
+@mcp.tool(title="Check local AutoCite health and privacy status", annotations=_READ_ONLY)
+def health_check(offline: bool = True) -> dict[str, Any]:
+    """Return readiness, privacy defaults, installed-model status, and network capabilities."""
+    return health_report(offline=offline)
 
 
 @mcp.tool(

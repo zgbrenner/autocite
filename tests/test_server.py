@@ -56,6 +56,7 @@ async def test_mcp_exposes_expected_tools_resources_and_prompts() -> None:
         "verify_case_citations",
         "explain_issue",
         "list_capabilities",
+        "health_check",
     }
     assert {str(resource.uri) for resource in resources} == {
         "autocite://capabilities",
@@ -82,10 +83,10 @@ async def test_mcp_exposes_expected_tools_resources_and_prompts() -> None:
 async def test_http_health_route_is_available() -> None:
     import json
 
-    from autocite_mcp.server import health_check
+    from autocite_mcp.server import health_route
 
     assert "/health" in {route.path for route in mcp.streamable_http_app().routes}
-    response = await health_check(None)  # type: ignore[arg-type]
+    response = await health_route(None)  # type: ignore[arg-type]
     payload = json.loads(response.body)
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store"

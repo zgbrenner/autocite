@@ -219,6 +219,7 @@ async def review_document(
     knowledge["jurisdiction_profile"] = profile
     remaining = final["issues"]
     return {
+        "schema_version": "1.0",
         "workflow": "complete_citecheck",
         "mode_detection": detection,
         "mode": resolved_mode,

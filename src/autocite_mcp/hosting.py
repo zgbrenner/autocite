@@ -76,6 +76,13 @@ def build_http_app(api_token: str | None = None) -> BearerGate:
     return BearerGate(mcp.streamable_http_app(), token=token)
 
 
+def validate_loopback_host(host: str) -> str:
+    normalized = host.strip().lower()
+    if normalized not in {"127.0.0.1", "localhost", "::1"}:
+        raise ValueError("AutoCite HTTP mode is local-only and must bind to a loopback host")
+    return host
+
+
 def main() -> None:
     transport = os.getenv("AUTOCITE_TRANSPORT", "stdio").strip().lower()
     allowed = {"stdio", "sse", "streamable-http"}
@@ -84,7 +91,7 @@ def main() -> None:
     if transport == "streamable-http":
         import uvicorn
 
-        host = os.getenv("AUTOCITE_HOST", "127.0.0.1")
+        host = validate_loopback_host(os.getenv("AUTOCITE_HOST", "127.0.0.1"))
         port = int(os.getenv("PORT", os.getenv("AUTOCITE_PORT", "8000")))
         uvicorn.run(build_http_app(), host=host, port=port)
         return
