@@ -2,6 +2,8 @@
 
 AutoCite can optionally use a citation-specialized small language model based on `Qwen/Qwen3.5-0.8B`. The model supplements the deterministic engine; it does not replace it.
 
+The published LoRA adapter is [`foolish-bandit/AutoCite-0.8B`](https://huggingface.co/foolish-bandit/AutoCite-0.8B), which AutoCite uses by default when `--slm` is enabled.
+
 ## What the model does
 
 The SLM receives one bounded citation task at a time. It identifies the source type and issue, explains the formatting concern, proposes a correction when the required facts are already present, or abstains and lists missing facts. Its output must be a strict JSON object.
@@ -20,7 +22,7 @@ Use a local or alternate Hub model:
 ```bash
 uv run autocite review-file memorandum.docx \
   --slm \
-  --model-path /models/autocite-0.8b
+  --model-path foolish-bandit/AutoCite-0.8B
 ```
 
 Applying SLM edits is a separate opt-in:

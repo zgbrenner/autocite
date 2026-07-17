@@ -68,7 +68,7 @@ def main() -> None:
     if not train_rows or not eval_rows:
         raise ValueError("Dataset must contain non-empty train and validation splits")
 
-    hub_model_id = os.getenv("AUTOCITE_HUB_MODEL", "sonomos/AutoCite-0.8B")
+    hub_model_id = os.getenv("AUTOCITE_HUB_MODEL", "foolish-bandit/AutoCite-0.8B")
     output_dir = os.getenv("AUTOCITE_OUTPUT_DIR", "outputs/autocite-0.8b-lora")
     trainer = SFTTrainer(
         model=MODEL_ID,

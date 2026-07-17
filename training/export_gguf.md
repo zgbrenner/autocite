@@ -7,7 +7,7 @@ from peft import PeftModel
 from transformers import AutoModelForImageTextToText, AutoProcessor
 
 base = "Qwen/Qwen3.5-0.8B"
-adapter = "sonomos/AutoCite-0.8B"
+adapter = "foolish-bandit/AutoCite-0.8B"
 output = "outputs/autocite-0.8b-merged"
 
 model = AutoModelForImageTextToText.from_pretrained(base, device_map="cpu")

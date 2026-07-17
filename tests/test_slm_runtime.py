@@ -85,6 +85,15 @@ def test_builds_bounded_tasks_from_deterministic_inventory():
     assert tasks[0].citation_start == 600
 
 
+def test_published_autocite_adapter_is_the_default_model():
+    runtime = _load_runtime()
+    assert runtime.DEFAULT_MODEL == "foolish-bandit/AutoCite-0.8B"
+    source = (ROOT / "src" / "autocite_mcp" / "slm_runtime.py").read_text(
+        encoding="utf-8"
+    )
+    assert "enable_thinking=False" in source
+
+
 def test_hybrid_review_accepts_safe_json_and_applies_only_when_enabled():
     runtime = _load_runtime()
     fake = runtime.CallableSLMRuntime(lambda prompt: _response())

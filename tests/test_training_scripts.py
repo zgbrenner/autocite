@@ -20,6 +20,13 @@ def test_training_defaults_use_qwen_lora_trackio_and_hub_persistence():
     assert "SFTTrainer" in source
     assert "LoraConfig" in source
     assert "trainer.push_to_hub()" in source
+    assert '"foolish-bandit/AutoCite-0.8B"' in source
+
+
+def test_slm_extra_can_load_the_published_lora_adapter():
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    assert '"peft>=0.18,<1"' in pyproject
+    assert '"torchvision>=0.22,<1"' in pyproject
 
 
 def test_evaluation_reports_required_safety_and_quality_metrics():

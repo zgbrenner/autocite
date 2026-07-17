@@ -13,6 +13,7 @@ from . import __version__
 from .formatters import generate_citation as _generate_citation
 from .knowledge import CORE_RULES, get_knowledge_pack
 from .rules import RULE_CATALOG, validate_mode
+from .slm_runtime import DEFAULT_MODEL
 from .tools import (
     check_citations as _check_citations,
     check_single_citation as _check_single_citation,
@@ -92,7 +93,7 @@ async def review_document(
     deep_review: bool = False,
     include_source_text: bool = False,
     use_slm: bool = False,
-    model_path: str = "Qwen/Qwen3.5-0.8B",
+    model_path: str = DEFAULT_MODEL,
     slm_only: bool = False,
     apply_slm_fixes: bool = False,
 ) -> dict[str, Any]:
@@ -133,7 +134,7 @@ async def review_uploaded_document(
     deep_review: bool = False,
     include_source_text: bool = False,
     use_slm: bool = False,
-    model_path: str = "Qwen/Qwen3.5-0.8B",
+    model_path: str = DEFAULT_MODEL,
     slm_only: bool = False,
     apply_slm_fixes: bool = False,
 ) -> dict[str, Any]:

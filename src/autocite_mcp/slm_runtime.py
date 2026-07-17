@@ -14,7 +14,7 @@ from .slm import (
 )
 
 
-DEFAULT_MODEL = "Qwen/Qwen3.5-0.8B"
+DEFAULT_MODEL = "foolish-bandit/AutoCite-0.8B"
 
 
 @dataclass(frozen=True)
@@ -86,6 +86,7 @@ class TransformersSLMRuntime:
             messages,
             tokenize=False,
             add_generation_prompt=True,
+            enable_thinking=False,
         )
         inputs = self._processor(text=[rendered], return_tensors="pt")
         device = next(self._model.parameters()).device

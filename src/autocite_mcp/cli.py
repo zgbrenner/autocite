@@ -11,6 +11,7 @@ from typing import Any
 from .evals import run_gold_evaluation
 from .formatters import generate_citation
 from .setup_clients import install_claude_desktop
+from .slm_runtime import DEFAULT_MODEL
 from .tools import (
     check_citations,
     export_review_docx,
@@ -44,7 +45,7 @@ def _add_review_options(command: argparse.ArgumentParser) -> None:
     command.add_argument("--deep-review", action="store_true")
     command.add_argument("--include-source-text", action="store_true")
     command.add_argument("--slm", action="store_true", help="Enable optional local SLM review")
-    command.add_argument("--model-path", default="Qwen/Qwen3.5-0.8B")
+    command.add_argument("--model-path", default=DEFAULT_MODEL)
     command.add_argument("--slm-only", action="store_true", help="Skip deterministic edits for evaluation")
     command.add_argument("--apply-slm-fixes", action="store_true")
 

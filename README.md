@@ -5,7 +5,7 @@ AutoCite turns Claude or ChatGPT into a safer legal-citation specialist for:
 - **Bluepages** — briefs, motions, pleadings, court filings, and practitioner memoranda.
 - **Whitepages** — law reviews, student notes, seminar papers, and academic legal research.
 
-AutoCite 0.4 also includes an optional local SLM layer based on `Qwen/Qwen3.5-0.8B`. The model can classify ambiguous citation issues and propose structured repairs, but deterministic validation remains in control of every automatic edit.
+AutoCite 0.4 also includes an optional local SLM layer using [`foolish-bandit/AutoCite-0.8B`](https://huggingface.co/foolish-bandit/AutoCite-0.8B), a citation-specialized LoRA adapter based on `Qwen/Qwen3.5-0.8B`. The model can classify ambiguous citation issues and propose structured repairs, but deterministic validation remains in control of every automatic edit.
 
 The normal workflow remains simple: connect AutoCite, provide text or a document, and ask the model to fix the citations. AutoCite detects the appropriate mode, applies deterministic fixes, supplies citation-rule knowledge, and—when explicitly requested—retrieves case authority to compare quotations, page markers, and candidate supporting passages.
 
