@@ -76,11 +76,44 @@ def build_http_app(api_token: str | None = None) -> BearerGate:
     return BearerGate(mcp.streamable_http_app(), token=token)
 
 
+_LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
+
+
 def validate_loopback_host(host: str) -> str:
     normalized = host.strip().lower()
-    if normalized not in {"127.0.0.1", "localhost", "::1"}:
+    if normalized not in _LOOPBACK_HOSTS:
         raise ValueError("AutoCite HTTP mode is local-only and must bind to a loopback host")
     return host
+
+
+def resolve_bind_host(
+    host: str | None = None,
+    *,
+    allow_remote: str | None = None,
+    api_token: str | None = None,
+) -> str:
+    """Resolve the HTTP bind host, defaulting to local-only.
+
+    Binding beyond loopback requires both an explicit AUTOCITE_ALLOW_REMOTE opt-in
+    and a configured AUTOCITE_API_TOKEN, so a hosted deployment can never start
+    unauthenticated by accident.
+    """
+    resolved = (host if host is not None else os.getenv("AUTOCITE_HOST", "127.0.0.1")).strip()
+    if resolved.lower() in _LOOPBACK_HOSTS:
+        return resolved
+    opt_in = (allow_remote if allow_remote is not None else os.getenv("AUTOCITE_ALLOW_REMOTE", "")).strip().lower()
+    if opt_in not in {"1", "true", "yes"}:
+        raise ValueError(
+            "AutoCite binds to loopback by default. To serve a non-loopback host such as "
+            f"{resolved!r}, set AUTOCITE_ALLOW_REMOTE=1 and configure AUTOCITE_API_TOKEN."
+        )
+    token = api_token if api_token is not None else os.getenv("AUTOCITE_API_TOKEN")
+    if not token:
+        raise ValueError(
+            "Refusing to bind a non-loopback host without AUTOCITE_API_TOKEN. "
+            "An unauthenticated public /mcp endpoint would expose the review tools to anyone."
+        )
+    return resolved
 
 
 def main() -> None:
@@ -91,7 +124,7 @@ def main() -> None:
     if transport == "streamable-http":
         import uvicorn
 
-        host = validate_loopback_host(os.getenv("AUTOCITE_HOST", "127.0.0.1"))
+        host = resolve_bind_host()
         port = int(os.getenv("PORT", os.getenv("AUTOCITE_PORT", "8000")))
         uvicorn.run(build_http_app(), host=host, port=port)
         return

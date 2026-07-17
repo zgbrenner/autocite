@@ -10,6 +10,8 @@ services:
         value: streamable-http
       - key: AUTOCITE_HOST
         value: 0.0.0.0
+      - key: AUTOCITE_ALLOW_REMOTE
+        value: "1"
       - key: AUTOCITE_API_TOKEN
         sync: false
       - key: COURTLISTENER_TOKEN

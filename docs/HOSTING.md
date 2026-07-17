@@ -7,9 +7,12 @@ For a private deployment where the client can send an `Authorization` header, se
 ```bash
 AUTOCITE_TRANSPORT=streamable-http \
 AUTOCITE_HOST=0.0.0.0 \
+AUTOCITE_ALLOW_REMOTE=1 \
 AUTOCITE_API_TOKEN="generate-a-long-random-secret" \
 autocite-mcp
 ```
+
+AutoCite binds to loopback (`127.0.0.1`) by default. Binding any other host requires both `AUTOCITE_ALLOW_REMOTE=1` and a configured `AUTOCITE_API_TOKEN`; the server refuses to start a publicly bound, unauthenticated `/mcp` endpoint.
 
 Requests to `/mcp` must include:
 

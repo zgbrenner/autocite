@@ -1,6 +1,8 @@
 import asyncio
 
-from autocite_mcp.hosting import BearerGate
+import pytest
+
+from autocite_mcp.hosting import BearerGate, resolve_bind_host
 
 
 async def _invoke(app, path: str, authorization: str | None = None):
@@ -54,3 +56,22 @@ def test_bearer_gate_leaves_health_public():
     gate = BearerGate(inner, token="secret")
     result = asyncio.run(_invoke(gate, "/health"))
     assert result[0]["status"] == 200
+
+
+def test_resolve_bind_host_allows_loopback_without_opt_in():
+    assert resolve_bind_host("127.0.0.1", allow_remote="", api_token=None) == "127.0.0.1"
+    assert resolve_bind_host("localhost", allow_remote="", api_token=None) == "localhost"
+
+
+def test_resolve_bind_host_rejects_public_host_without_opt_in():
+    with pytest.raises(ValueError, match="AUTOCITE_ALLOW_REMOTE"):
+        resolve_bind_host("0.0.0.0", allow_remote="", api_token="secret")
+
+
+def test_resolve_bind_host_rejects_unauthenticated_public_bind():
+    with pytest.raises(ValueError, match="AUTOCITE_API_TOKEN"):
+        resolve_bind_host("0.0.0.0", allow_remote="1", api_token="")
+
+
+def test_resolve_bind_host_allows_container_deployment_with_token():
+    assert resolve_bind_host("0.0.0.0", allow_remote="1", api_token="secret") == "0.0.0.0"
