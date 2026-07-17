@@ -725,7 +725,7 @@ def classify_document_mode(
         raise ValueError("document_type must be auto or a recognized court/practitioner/academic type")
     searchable = " ".join(filter(None, [ir.metadata.title, ir.metadata.subject, ir.text[:4000]]))
     if re.search(r"\b(?:district|supreme|superior|bankruptcy) court\b|\bplaintiff\b|\bdefendant\b|\bmotion\b", searchable, re.I):
-        blue_evidence.append("court_caption_or_filing_language")
+        blue_evidence.append("court_filing_language")
     if re.search(r"\blaw review\b|\bseminar paper\b|\bthis (?:article|note)\b|\bscholarly\b", searchable, re.I):
         white_evidence.append("academic_language")
     note_count = len(ir.blocks_of_kind("footnote")) + len(ir.blocks_of_kind("endnote"))
@@ -738,7 +738,14 @@ def classify_document_mode(
         blue_evidence.append("document_metadata_title")
     if ir.metadata.title and re.search(r"article|review|paper|note", ir.metadata.title, re.I):
         white_evidence.append("document_metadata_title")
-    auto_mode = "whitepages" if len(white_evidence) > len(blue_evidence) else "bluepages"
+    def _score(evidence: list[str]) -> int:
+        # An explicit document_type is a direct user assertion, so it outweighs
+        # any single textual signal inferred from document content.
+        return sum(2 if item.startswith("document_type:") else 1 for item in evidence)
+
+    blue_score = _score(blue_evidence)
+    white_score = _score(white_evidence)
+    auto_mode = "whitepages" if white_score > blue_score else "bluepages"
     auto_evidence = white_evidence if auto_mode == "whitepages" else blue_evidence
     conflicts = blue_evidence if auto_mode == "whitepages" else white_evidence
     if explicit != "auto":
@@ -750,8 +757,9 @@ def classify_document_mode(
     else:
         selected = auto_mode
         evidence = auto_evidence
-        margin = abs(len(blue_evidence) - len(white_evidence))
-        confidence = "high" if margin >= 2 and len(auto_evidence) >= 2 else "medium" if margin >= 1 else "low"
+        margin = abs(blue_score - white_score)
+        auto_score = white_score if auto_mode == "whitepages" else blue_score
+        confidence = "high" if margin >= 2 and auto_score >= 2 else "medium" if margin >= 1 else "low"
         confirmation = confidence == "low" or bool(conflicts and margin <= 1)
     return {
         "selected_mode": selected,

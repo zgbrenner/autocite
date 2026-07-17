@@ -1,10 +1,12 @@
 from pathlib import Path
 
+import autocite_mcp
+
 
 def test_package_metadata_and_boundaries():
     root = Path(__file__).resolve().parents[1]
     pyproject = (root / "pyproject.toml").read_text(encoding="utf-8")
-    assert 'version = "0.3.0"' in pyproject
+    assert f'version = "{autocite_mcp.__version__}"' in pyproject
     assert "beautifulsoup4" in pyproject
     assert "python-docx" in pyproject
     assert "pypdf" in pyproject
