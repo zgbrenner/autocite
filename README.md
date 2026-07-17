@@ -54,6 +54,8 @@ Use this for TXT, Markdown, DOCX, and text-based PDF. Scanned or image-only PDFs
 
 Uploaded documents are parsed into a structure-preserving `DocumentIR`. DOCX footnotes and endnotes remain separate from body text, Markdown note identifiers are retained, and text PDFs keep page and coordinate evidence where available. Every original citation is returned with a stable block, note, or page location in `structured_citation_inventory`. See [`docs/DOCUMENT_IR.md`](docs/DOCUMENT_IR.md).
 
+Each review also builds a document-wide citation graph. It keeps conservative authority identities, every citation occurrence, structural relationships, and explicit short-form resolutions. Ambiguous `Id.`, short-case, `supra`, `supra note`, statutory short forms, and `hereinafter` uses return candidates and a review warning instead of a guessed antecedent. See [`docs/CITATION_GRAPH.md`](docs/CITATION_GRAPH.md).
+
 ### `open_citecheck_workspace`
 
 MCP Apps-capable hosts can render a self-contained workspace with:
@@ -103,6 +105,8 @@ Generic state profiles identify the jurisdiction but set `verified_overrides=fal
 | `list_jurisdiction_profiles` | List federal and all fifty state profiles. |
 | `get_citation_guidance` | Return a compact rule playbook for a mode and source type. |
 | `check_citations` | Audit a document and return structured issues. |
+| `get_citation_graph` | Inspect authorities, occurrences, relationships, and resolutions. |
+| `resolve_short_form` | Resolve short forms or return bounded ambiguous candidates. |
 | `fix_citations` | Apply high-confidence mechanical fixes only. |
 | `check_single_citation` | Review exactly one recognized citation. |
 | `convert_citation` | Convert a recognized citation using only present facts. |

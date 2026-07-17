@@ -1,6 +1,14 @@
 """AutoCite MCP: evidence-backed legal citation analysis and MCP tools."""
 
 from .engine import CitationEngine
+from .citation_graph import (
+    AuthorityNode,
+    CitationEdge,
+    CitationGraph,
+    OccurrenceNode,
+    ResolutionResult,
+    build_citation_graph,
+)
 from .document_ir import CitationLocation, CitationOccurrence, DocumentBlock, DocumentIR
 from .formatters import generate_citation
 from .proposal_models import (
@@ -13,10 +21,15 @@ from .slm import CitationProposal, SLMProposal, validate_proposal
 
 __all__ = [
     "CitationEngine",
+    "AuthorityNode",
+    "CitationEdge",
+    "CitationGraph",
     "CitationLocation",
     "CitationOccurrence",
     "DocumentBlock",
     "DocumentIR",
+    "OccurrenceNode",
+    "ResolutionResult",
     "CitationProposal",
     "CitationProposalModel",
     "DisabledProposalModel",
@@ -24,6 +37,7 @@ __all__ = [
     "ModelRuntimeConfig",
     "SLMProposal",
     "generate_citation",
+    "build_citation_graph",
     "validate_proposal",
 ]
 __version__ = "0.4.0"
