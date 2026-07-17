@@ -14,6 +14,7 @@ from .formatters import generate_citation
 from .setup_clients import install_claude_desktop
 from .slm_runtime import DEFAULT_MODEL
 from .retrieval import RuleLibrary
+from .local_product import ModelManager, default_model_root, health_report, installation_plan
 from .tools import (
     check_citations,
     export_review_docx,
@@ -137,6 +138,16 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser("jurisdictions", help="List federal and state profiles")
     subparsers.add_parser("capabilities")
+    install_plan = subparsers.add_parser("install-plan", help="Print a safe local installation profile")
+    install_plan.add_argument("--profile", choices=("lightweight", "standard", "gpu", "offline"), default="lightweight")
+    health = subparsers.add_parser("health", help="Check local readiness and privacy defaults")
+    health.add_argument("--online", action="store_true")
+    models = subparsers.add_parser("models", help="Manage explicitly installed local models")
+    models.add_argument("action", choices=("list", "install", "verify", "remove"))
+    models.add_argument("--model-id")
+    models.add_argument("--source", type=Path)
+    models.add_argument("--root", type=Path)
+    models.add_argument("--confirm", action="store_true")
     return parser
 
 
@@ -284,6 +295,27 @@ def main() -> None:
         return
     if args.command == "jurisdictions":
         _emit(list_jurisdiction_profiles())
+        return
+    if args.command == "install-plan":
+        _emit(installation_plan(args.profile))
+        return
+    if args.command == "health":
+        _emit(health_report(offline=not args.online))
+        return
+    if args.command == "models":
+        manager = ModelManager(args.root or default_model_root())
+        if args.action == "list":
+            _emit({"models": manager.list_models(), "automatic_download": False})
+        elif not args.model_id:
+            raise ValueError("--model-id is required for this action")
+        elif args.action == "install":
+            if args.source is None:
+                raise ValueError("--source is required; review never downloads models")
+            _emit(manager.install_local(args.model_id, args.source))
+        elif args.action == "verify":
+            _emit({"model_id": args.model_id, **manager.verify(args.model_id)})
+        else:
+            _emit(manager.remove(args.model_id, confirm=args.confirm))
         return
     _emit(list_capabilities())
 

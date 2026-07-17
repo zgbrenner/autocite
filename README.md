@@ -205,11 +205,13 @@ uv sync --extra dev
 uv run autocite-mcp
 ```
 
-Hosted mode:
+Local profiles, offline installation, model verification, health diagnostics, and host configuration are in [`docs/LOCAL_INSTALL.md`](docs/LOCAL_INSTALL.md).
+
+Optional loopback HTTP mode:
 
 ```bash
 AUTOCITE_TRANSPORT=streamable-http \
-AUTOCITE_HOST=0.0.0.0 \
+AUTOCITE_HOST=127.0.0.1 \
 AUTOCITE_PORT=8000 \
 uv run autocite-mcp
 ```
@@ -228,7 +230,7 @@ docker build -t autocite-mcp .
 docker run --rm -p 8000:8000 autocite-mcp
 ```
 
-A public deployment without authentication is appropriate only for demonstrations or nonconfidential text. Production multi-user hosting must add OAuth or an authenticated reverse proxy, tenant isolation, TLS, request limits, and log redaction. See [`docs/SECURITY.md`](docs/SECURITY.md).
+The packaged server rejects public bind addresses. AutoCite is a local product; expose neither the MCP endpoint nor document review on a public interface.
 
 ## Evaluation and release
 
