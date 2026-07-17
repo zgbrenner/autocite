@@ -4,7 +4,9 @@ import io
 import re
 import statistics
 import zipfile
+from bisect import bisect_right
 from dataclasses import dataclass, field, replace
+from functools import cached_property
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 from xml.etree import ElementTree as ET
@@ -106,16 +108,41 @@ class DocumentIR:
     def blocks_of_kind(self, kind: str) -> list[DocumentBlock]:
         return [block for block in self.blocks if block.kind == kind]
 
+    @cached_property
+    def _block_segments(self) -> tuple[list[int], list[DocumentBlock | None]]:
+        """Precompute smallest-containing-block per text segment for O(log n) lookup.
+
+        block_at runs once per citation occurrence, so the naive full scan made
+        citation location O(citations x blocks) on large documents.
+        """
+        located = [block for block in self.blocks if block.kind in LOCATION_KINDS]
+        boundaries = sorted({b.absolute_start for b in located} | {b.absolute_end for b in located})
+        starts: dict[int, list[int]] = {}
+        ends: dict[int, list[int]] = {}
+        for index, block in enumerate(located):
+            starts.setdefault(block.absolute_start, []).append(index)
+            ends.setdefault(block.absolute_end, []).append(index)
+        active: set[int] = set()
+        winners: list[DocumentBlock | None] = []
+        for boundary in boundaries:
+            active.difference_update(ends.get(boundary, ()))
+            active.update(starts.get(boundary, ()))
+            if active:
+                winner = min(
+                    (located[i] for i in active),
+                    key=lambda item: (item.absolute_end - item.absolute_start, item.order),
+                )
+            else:
+                winner = None
+            winners.append(winner)
+        return boundaries, winners
+
     def block_at(self, offset: int) -> DocumentBlock | None:
-        candidates = [
-            block
-            for block in self.blocks
-            if block.kind in LOCATION_KINDS
-            and block.absolute_start <= offset < block.absolute_end
-        ]
-        if not candidates:
+        boundaries, winners = self._block_segments
+        index = bisect_right(boundaries, offset) - 1
+        if index < 0:
             return None
-        return min(candidates, key=lambda item: (item.absolute_end - item.absolute_start, item.order))
+        return winners[index]
 
     def with_citations(self, citations: Sequence[CitationOccurrence]) -> "DocumentIR":
         return replace(self, citations=tuple(citations))
