@@ -23,6 +23,7 @@ from .tools import (
     get_citation_guidance as _get_citation_guidance,
     get_citation_graph as _get_citation_graph,
     get_rule_coverage as _get_rule_coverage,
+    get_rule_context as _get_rule_context,
     get_jurisdiction_profile as _get_jurisdiction_profile,
     list_capabilities as _list_capabilities,
     list_jurisdiction_profiles as _list_jurisdiction_profiles,
@@ -107,6 +108,8 @@ async def review_document(
     model_max_generated_tokens: int = 512,
     model_timeout_seconds: float = 60.0,
     model_seed: int = 42,
+    use_rule_retrieval: bool = True,
+    retrieval_top_k: int = 3,
     slm_only: bool = False,
     apply_slm_fixes: bool = False,
 ) -> dict[str, Any]:
@@ -138,6 +141,8 @@ async def review_document(
         model_max_generated_tokens=model_max_generated_tokens,
         model_timeout_seconds=model_timeout_seconds,
         model_seed=model_seed,
+        use_rule_retrieval=use_rule_retrieval,
+        retrieval_top_k=retrieval_top_k,
         slm_only=slm_only,
         apply_slm_fixes=apply_slm_fixes,
     )
@@ -168,6 +173,8 @@ async def review_uploaded_document(
     model_max_generated_tokens: int = 512,
     model_timeout_seconds: float = 60.0,
     model_seed: int = 42,
+    use_rule_retrieval: bool = True,
+    retrieval_top_k: int = 3,
     slm_only: bool = False,
     apply_slm_fixes: bool = False,
 ) -> dict[str, Any]:
@@ -196,6 +203,8 @@ async def review_uploaded_document(
         model_max_generated_tokens=model_max_generated_tokens,
         model_timeout_seconds=model_timeout_seconds,
         model_seed=model_seed,
+        use_rule_retrieval=use_rule_retrieval,
+        retrieval_top_k=retrieval_top_k,
         slm_only=slm_only,
         apply_slm_fixes=apply_slm_fixes,
     )
@@ -292,6 +301,26 @@ def resolve_short_form(text: str, mode: str = "bluepages") -> dict[str, Any]:
 def get_rule_coverage() -> dict[str, dict[str, Any]]:
     """Return tested coverage and unsupported source/rule families without overclaiming."""
     return _get_rule_coverage()
+
+
+@mcp.tool(title="Get local citation-rule context", annotations=_READ_ONLY)
+def get_rule_context(
+    query: str,
+    mode: str | None = None,
+    source_type: str | None = None,
+    rule_family: str | None = None,
+    jurisdiction: str | None = None,
+    top_k: int = 3,
+) -> dict[str, Any]:
+    """Retrieve approved local Markdown summaries with exact chunk attribution."""
+    return _get_rule_context(
+        query,
+        mode=mode,
+        source_type=source_type,
+        rule_family=rule_family,
+        jurisdiction=jurisdiction,
+        top_k=top_k,
+    )
 
 
 @mcp.tool(title="Apply safe citation fixes", annotations=_READ_ONLY)

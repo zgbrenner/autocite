@@ -25,6 +25,12 @@ from .jurisdictions import (
 )
 from .knowledge import get_knowledge_pack, infer_citation_mode
 from .rules import RULE_CATALOG, rule_reference, validate_mode
+from .retrieval import (
+    LexicalRuleRetriever,
+    RetrievalQuery,
+    RuleLibrary,
+    should_retrieve,
+)
 from .slm_runtime import (
     DEFAULT_MODEL,
     SLMRuntime,
@@ -59,6 +65,8 @@ async def review_document(
     model_max_generated_tokens: int = 512,
     model_timeout_seconds: float = 60.0,
     model_seed: int = 42,
+    use_rule_retrieval: bool = True,
+    retrieval_top_k: int = 3,
     slm_only: bool = False,
     apply_slm_fixes: bool = False,
     _slm_runtime: SLMRuntime | None = None,
@@ -94,6 +102,47 @@ async def review_document(
         citation_graph,
         mode=resolved_mode,
     )
+    retrieve_rules = use_rule_retrieval and should_retrieve(
+        review_required=any(
+            finding.correction_level == "review_required"
+            for finding in contextual_rule_findings
+        ),
+        ambiguous_antecedent=any(
+            result.human_review_required for result in citation_graph.resolutions
+        ),
+        multiple_rule_families=len(
+            {finding.family for finding in contextual_rule_findings}
+        )
+        > 1,
+        mode_uncertain=str(detection.get("confidence")) == "low",
+        signal_or_parenthetical_review=any(
+            finding.family in {"signals", "parentheticals"}
+            for finding in contextual_rule_findings
+        ),
+    )
+    if retrieve_rules:
+        query_text = " ".join(
+            [
+                "citation review",
+                *(finding.issue_code for finding in contextual_rule_findings),
+                *(finding.explanation for finding in contextual_rule_findings),
+            ]
+        )
+        retrieved_chunks = LexicalRuleRetriever(RuleLibrary.builtin()).retrieve(
+            RetrievalQuery(query_text, mode=resolved_mode),
+            top_k=retrieval_top_k,
+        )
+    else:
+        retrieved_chunks = []
+    model_rule_chunks = tuple(
+        {
+            "chunk_id": item.chunk.chunk_id,
+            "heading": item.chunk.heading,
+            "text": item.chunk.text,
+            "source_filename": item.chunk.source_filename,
+        }
+        for item in retrieved_chunks
+    )
     fixed = (
         _ENGINE.fix(text, mode=resolved_mode)
         if apply_safe_fixes and not slm_only
@@ -121,6 +170,7 @@ async def review_document(
             deterministic_result=final,
             runtime=runtime,
             apply_slm_fixes=apply_slm_fixes,
+            retrieved_rule_chunks=model_rule_chunks,
         )
         if slm_review["corrected_text"] != corrected_text:
             corrected_text = str(slm_review["corrected_text"])
@@ -217,7 +267,14 @@ async def review_document(
             if slm_review["status"] != "not_requested"
             else []
         ),
-        "retrieved_guidance": knowledge,
+        "retrieved_guidance": [item.as_dict() for item in retrieved_chunks],
+        "retrieval": {
+            "triggered": retrieve_rules,
+            "backend": "deterministic_lexical" if retrieve_rules else "not_run",
+            "local_only": True,
+            "chunks": [item.as_dict() for item in retrieved_chunks],
+            "warning": "Retrieval scores rank local context; they are not legal conclusions.",
+        },
         "source_verification_results": {
             "case_verification": verification,
             "deep_review": deep_results,
@@ -286,6 +343,8 @@ async def review_uploaded_document(
     model_max_generated_tokens: int = 512,
     model_timeout_seconds: float = 60.0,
     model_seed: int = 42,
+    use_rule_retrieval: bool = True,
+    retrieval_top_k: int = 3,
     slm_only: bool = False,
     apply_slm_fixes: bool = False,
     _slm_runtime: SLMRuntime | None = None,
@@ -329,6 +388,8 @@ async def review_uploaded_document(
         model_max_generated_tokens=model_max_generated_tokens,
         model_timeout_seconds=model_timeout_seconds,
         model_seed=model_seed,
+        use_rule_retrieval=use_rule_retrieval,
+        retrieval_top_k=retrieval_top_k,
         slm_only=slm_only,
         apply_slm_fixes=apply_slm_fixes,
         _slm_runtime=_slm_runtime,
@@ -440,6 +501,39 @@ def resolve_short_form(
 def get_rule_coverage() -> dict[str, dict[str, Any]]:
     """Return explicit implemented, partial, and unsupported rule coverage."""
     return rule_coverage_matrix()
+
+
+def get_rule_context(
+    query: str,
+    *,
+    mode: str | None = None,
+    source_type: str | None = None,
+    rule_family: str | None = None,
+    jurisdiction: str | None = None,
+    top_k: int = 3,
+) -> dict[str, Any]:
+    """Retrieve a small, source-attributed set of approved local rule summaries."""
+    if not query.strip():
+        raise ValueError("query must not be empty")
+    if mode is not None:
+        mode = validate_mode(mode)
+    results = LexicalRuleRetriever(RuleLibrary.builtin()).retrieve(
+        RetrievalQuery(
+            query,
+            mode=mode,
+            source_type=source_type,
+            rule_family=rule_family,
+            jurisdiction=jurisdiction,
+        ),
+        top_k=top_k,
+    )
+    return {
+        "query": query,
+        "backend": "deterministic_lexical",
+        "local_only": True,
+        "chunks": [item.as_dict() for item in results],
+        "warning": "Scores rank local reference context and are not legal conclusions.",
+    }
 
 
 def check_single_citation(

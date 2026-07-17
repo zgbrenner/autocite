@@ -12,6 +12,7 @@ from .evals import run_gold_evaluation
 from .formatters import generate_citation
 from .setup_clients import install_claude_desktop
 from .slm_runtime import DEFAULT_MODEL
+from .retrieval import RuleLibrary
 from .tools import (
     check_citations,
     export_review_docx,
@@ -113,6 +114,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     evaluation = subparsers.add_parser("eval", help="Run deterministic AutoCite gold fixtures")
     evaluation.add_argument("--file", type=Path, default=Path("evals/gold.jsonl"))
+
+    rule_index = subparsers.add_parser(
+        "build-rule-index",
+        help="Build a reproducible local index from approved Markdown",
+    )
+    rule_index.add_argument("--source-dir", type=Path)
+    rule_index.add_argument("--output", type=Path, required=True)
 
     subparsers.add_parser("jurisdictions", help="List federal and state profiles")
     subparsers.add_parser("capabilities")
@@ -234,6 +242,24 @@ def main() -> None:
         return
     if args.command == "eval":
         _emit(run_gold_evaluation(args.file))
+        return
+    if args.command == "build-rule-index":
+        library = (
+            RuleLibrary.from_directory(args.source_dir)
+            if args.source_dir
+            else RuleLibrary.builtin()
+        )
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        library.save_index(args.output)
+        _emit(
+            {
+                "output": str(args.output),
+                "schema_version": library.schema_version,
+                "chunk_count": len(library.chunks),
+                "reproducible": True,
+                "local_only": True,
+            }
+        )
         return
     if args.command == "jurisdictions":
         _emit(list_jurisdiction_profiles())

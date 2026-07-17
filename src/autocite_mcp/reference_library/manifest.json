@@ -1,0 +1,38 @@
+{
+  "schema_version": "1.0",
+  "sources": [
+    {
+      "filename": "short_forms.md",
+      "included": true,
+      "license": "CC0-1.0",
+      "redistribution_allowed": true,
+      "rule_family": "short_forms",
+      "mode": "both",
+      "source_type": "case",
+      "jurisdiction": "general_us",
+      "revision_date": "2026-07-17"
+    },
+    {
+      "filename": "signals_parentheticals.md",
+      "included": true,
+      "license": "CC0-1.0",
+      "redistribution_allowed": true,
+      "rule_family": "signals_parentheticals",
+      "mode": "both",
+      "source_type": "all",
+      "jurisdiction": "general_us",
+      "revision_date": "2026-07-17"
+    },
+    {
+      "filename": "internet_sources.md",
+      "included": true,
+      "license": "CC0-1.0",
+      "redistribution_allowed": true,
+      "rule_family": "internet_sources",
+      "mode": "whitepages",
+      "source_type": "internet",
+      "jurisdiction": "general_us",
+      "revision_date": "2026-07-17"
+    }
+  ]
+}
