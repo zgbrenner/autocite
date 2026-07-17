@@ -1,0 +1,31 @@
+name: Desktop bundles
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --extra desktop-build
+      - run: uv run pyinstaller packaging/autocite-desktop.spec --clean --noconfirm
+      - name: Checksums (Unix)
+        if: runner.os != 'Windows'
+        run: find dist -type f -exec shasum -a 256 {} \; > desktop-checksums.txt
+      - name: Checksums (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Get-ChildItem dist -Recurse -File | Get-FileHash -Algorithm SHA256 | Format-Table -HideTableHeaders > desktop-checksums.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: autocite-desktop-${{ runner.os }}
+          path: |
+            dist/
+            desktop-checksums.txt
