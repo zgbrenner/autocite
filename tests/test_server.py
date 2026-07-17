@@ -40,6 +40,7 @@ async def test_mcp_exposes_expected_tools_resources_and_prompts() -> None:
         "review_document",
         "review_uploaded_document",
         "export_review_docx",
+        "generate_certification_report",
         "open_citecheck_workspace",
         "get_jurisdiction_profile",
         "list_jurisdiction_profiles",

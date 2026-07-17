@@ -79,6 +79,10 @@ Text-only clients still receive a useful structured result.
 
 Creates an in-memory DOCX containing corrected text and optional Word insertion/deletion markup. It preserves text-level changes, not the original file's complete layout, styles, fields, footnotes, or pagination.
 
+### `generate_certification_report`
+
+Produces a court- and reviewer-facing audit trail for a document's citations: every citation with its verification tier, a truthful list of checks performed and checks not performed, a document fingerprint, and a statement suitable for filings that require a record of automated citation review. The report never asserts good-law status, proposition support, or complete Bluebook compliance. Set `verify_cases=true` or `deep_review=true` to include CourtListener matching (sends extracted citations over the network); by default the report is generated entirely locally and says so.
+
 ## Deep source review
 
 With `COURTLISTENER_TOKEN` configured and `deep_review=true`, AutoCite can:

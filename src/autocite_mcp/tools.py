@@ -420,6 +420,31 @@ async def review_uploaded_document(
     return result
 
 
+async def generate_certification_report(
+    text: str,
+    *,
+    document_type: str = "auto",
+    mode: str = "auto",
+    jurisdiction: str | None = None,
+    verify_cases: bool = False,
+    deep_review: bool = False,
+    prepared_for: str | None = None,
+) -> dict[str, Any]:
+    """Run a citation review and derive a truthful audit report from its results."""
+    from .certification import build_certification_report
+
+    review = await review_document(
+        text,
+        document_type=document_type,
+        mode=mode,
+        jurisdiction=jurisdiction,
+        apply_safe_fixes=False,
+        verify_cases=verify_cases,
+        deep_review=deep_review,
+    )
+    return build_certification_report(review, prepared_for=prepared_for)
+
+
 def export_review_docx(
     original_text: str,
     corrected_text: str,

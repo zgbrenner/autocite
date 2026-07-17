@@ -21,6 +21,7 @@ from .tools import (
     convert_citation as _convert_citation,
     explain_issue as _explain_issue,
     export_review_docx as _export_review_docx,
+    generate_certification_report as _generate_certification_report,
     get_citation_guidance as _get_citation_guidance,
     get_citation_graph as _get_citation_graph,
     get_rule_coverage as _get_rule_coverage,
@@ -241,6 +242,35 @@ def export_review_docx(
         corrected_text,
         tracked=tracked,
         filename=filename,
+    )
+
+
+@mcp.tool(title="Generate a citation review audit report", annotations=_NETWORK_READ)
+async def generate_certification_report(
+    text: str,
+    document_type: str = "auto",
+    mode: str = "auto",
+    jurisdiction: str | None = None,
+    verify_cases: bool = False,
+    deep_review: bool = False,
+    prepared_for: str | None = None,
+) -> dict[str, Any]:
+    """Produce a court- and reviewer-facing audit trail for a document's citations.
+
+    The report truthfully separates checks that ran (deterministic format review;
+    optional CourtListener matching when verify_cases or deep_review is set, which
+    sends extracted citations over the network) from checks that did not, and never
+    asserts good-law status or proposition support. Use it when a filing requires a
+    record of automated citation review.
+    """
+    return await _generate_certification_report(
+        text,
+        document_type=document_type,
+        mode=mode,
+        jurisdiction=jurisdiction,
+        verify_cases=verify_cases,
+        deep_review=deep_review,
+        prepared_for=prepared_for,
     )
 
 
