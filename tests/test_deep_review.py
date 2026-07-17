@@ -1,7 +1,15 @@
 import pytest
 
 from autocite_mcp.deep_review import DeepReviewer
+from autocite_mcp.evidence import HybridPassageScorer
 from autocite_mcp.tools import review_document
+
+
+class _FakeEmbeddingBackend:
+    """Deterministic stand-in for a local bi-encoder; no sentence-transformers/torch needed."""
+
+    def encode(self, texts):
+        return [[1.0 if "marry" in text.lower() else 0.0] for text in texts]
 
 
 class FakeSourceClient:
@@ -56,6 +64,53 @@ async def test_deep_reviewer_builds_evidence_records_from_full_opinion():
     assert case["evidence"]["quotation"]["status"] in {"exact", "normalized"}
     assert case["evidence"]["pincite"]["status"] == "confirmed_by_page_marker"
     assert case["evidence"]["proposition"]["requires_legal_judgment"] is True
+    # Default passage ranking is unchanged: deterministic lexical scoring, no injected scorer.
+    assert case["evidence"]["proposition"]["scorer"] == "lexical"
+
+
+@pytest.mark.asyncio
+async def test_deep_reviewer_accepts_injected_hybrid_passage_scorer_for_tests():
+    text = 'The Court stated “the right to marry is fundamental.” Obergefell v. Hodges, 576 U.S. 644, 675 (2015).'
+    citations = [
+        {
+            "source_type": "case",
+            "text": "Obergefell v. Hodges, 576 U.S. 644, 675 (2015)",
+            "start": text.index("Obergefell"),
+            "end": len(text) - 1,
+            "components": {"pincite": "675"},
+        }
+    ]
+    scorer = HybridPassageScorer(embedding_backend=_FakeEmbeddingBackend())
+    reviewer = DeepReviewer(source_client=FakeSourceClient(), passage_scorer=scorer)
+    result = await reviewer.review(text, citations)
+    evidence = result["cases"][0]["evidence"]
+    assert evidence["proposition"]["scorer"] == "hybrid_local_embedding"
+    assert evidence["proposition"]["candidate_passages"][0]["scorer"] == "hybrid_local_embedding"
+    assert evidence["proposition"]["requires_legal_judgment"] is True
+
+
+@pytest.mark.asyncio
+async def test_deep_reviewer_falls_back_to_lexical_when_hybrid_backend_is_broken():
+    class RaisingBackend:
+        def encode(self, texts):
+            raise RuntimeError("no locally cached model")
+
+    text = 'The Court stated “the right to marry is fundamental.” Obergefell v. Hodges, 576 U.S. 644, 675 (2015).'
+    citations = [
+        {
+            "source_type": "case",
+            "text": "Obergefell v. Hodges, 576 U.S. 644, 675 (2015)",
+            "start": text.index("Obergefell"),
+            "end": len(text) - 1,
+            "components": {"pincite": "675"},
+        }
+    ]
+    scorer = HybridPassageScorer(embedding_backend=RaisingBackend())
+    reviewer = DeepReviewer(source_client=FakeSourceClient(), passage_scorer=scorer)
+    result = await reviewer.review(text, citations)
+    evidence = result["cases"][0]["evidence"]
+    assert evidence["proposition"]["scorer"] == "lexical_fallback_hybrid_unavailable"
+    assert evidence["proposition"]["candidate_passages"][0]["fallback_reason"]
 
 
 @pytest.mark.asyncio

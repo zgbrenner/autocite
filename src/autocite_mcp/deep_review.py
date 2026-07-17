@@ -2,15 +2,22 @@ from __future__ import annotations
 
 from typing import Any
 
-from .evidence import analyze_case_evidence
+from .evidence import PassageScorer, analyze_case_evidence
 from .sources import CourtListenerSourceClient
 
 
 class DeepReviewer:
     """Compose primary-authority retrieval with deterministic evidence analysis."""
 
-    def __init__(self, source_client: CourtListenerSourceClient | None = None) -> None:
+    def __init__(
+        self,
+        source_client: CourtListenerSourceClient | None = None,
+        *,
+        passage_scorer: PassageScorer | None = None,
+    ) -> None:
         self.source_client = source_client or CourtListenerSourceClient()
+        # None defers to evidence.resolve_default_passage_scorer() (AUTOCITE_PASSAGE_SCORER).
+        self.passage_scorer = passage_scorer
 
     async def review(
         self,
@@ -66,6 +73,7 @@ class DeepReviewer:
                 source_text=analysis_text,
                 pincite=(citation.get("components") or {}).get("pincite"),
                 include_source_text=include_source_text,
+                passage_scorer=self.passage_scorer,
             )
             results.append(
                 {

@@ -12,13 +12,20 @@ A source-verified finding means retrieved primary text directly contains the rel
 
 ## 3. Candidate evidence
 
-AutoCite extracts the proposition before a case citation and ranks short passages from the retrieved opinion using disclosed lexical methods:
+AutoCite extracts the proposition before a case citation and ranks short passages from the retrieved opinion using bounded sentence windows rather than generated summaries. Two passage scorers are available; every ranked passage is stamped with the `scorer` value that actually produced its `combined_score`, so a reviewer never has to guess how a number was made.
+
+**Lexical (default, always available).** Disclosed, deterministic lexical methods only:
 
 - token-set overlap weighted at 65%;
-- sequence similarity weighted at 35%;
-- bounded sentence windows rather than generated summaries.
+- sequence similarity weighted at 35%.
 
-The resulting passage list is evidence for a lawyer, editor, or host model to review. It is not a conclusion that the case supports the proposition. Every proposition result therefore contains `requires_legal_judgment: true` and `conclusion: not_determined`.
+No network access, no model download, and no nondeterminism. `scorer` is reported as `lexical`.
+
+**Hybrid (optional, local-embedding).** Set `AUTOCITE_PASSAGE_SCORER=hybrid`, or construct `evidence.HybridPassageScorer`/pass one into `DeepReviewer(passage_scorer=...)`, to blend the same lexical score (50%) with cosine similarity (50%) from a local sentence-transformers bi-encoder (default `BAAI/bge-small-en-v1.5`, the same lazy-loaded, offline-only model default used by `retrieval.LocalEmbeddingRuleRetriever`). This adds a semantic signal lexical overlap alone cannot capture — e.g. a paraphrase with little token overlap. It requires the optional `retrieval` install extra (`sentence-transformers`) and a locally cached model; it never calls a network embedding API. `scorer` is reported as `hybrid_local_embedding`, and each passage also carries `embedding_similarity`.
+
+**Fallback (mandatory, not silent).** If `sentence-transformers` is not installed, the model is not locally cached, or the embedding backend raises for any other reason, AutoCite never raises and never pretends the hybrid path ran. It falls back to the lexical score for every passage and reports `scorer` as `lexical_fallback_hybrid_unavailable`, with a `fallback_reason` on each passage explaining why. The top-level `provenance.proposition` field reflects whichever of these three outcomes actually happened.
+
+In every case the resulting passage list is evidence for a lawyer, editor, or host model to review. It is not a conclusion that the case supports the proposition, and blending in an embedding similarity score does not change that: semantic similarity is still not legal support. Every proposition result therefore contains `requires_legal_judgment: true` and `conclusion: not_determined`.
 
 ## 4. Unresolved
 

@@ -60,6 +60,7 @@ class AblationConfig:
     use_retrieval: bool
     use_reranker: bool
     use_gliner: bool = False
+    use_hybrid_passage_scorer: bool = False
 
 
 ABLATION_CONFIGS = (
@@ -69,6 +70,10 @@ ABLATION_CONFIGS = (
     AblationConfig("deterministic_qwen_retrieval", True, True, False),
     AblationConfig("deterministic_qwen_retrieval_reranker", True, True, True),
     AblationConfig("experimental_gliner", False, False, False, True),
+    # Mirrors the reranker arm: candidate-passage ranking blended with local-embedding cosine
+    # similarity (AUTOCITE_PASSAGE_SCORER=hybrid / evidence.HybridPassageScorer) instead of the
+    # deterministic-only lexical passage ranker. Requires the optional 'retrieval' dependencies.
+    AblationConfig("deterministic_hybrid_passage_scorer", False, False, False, False, True),
 )
 
 
@@ -354,6 +359,14 @@ async def run_ablation_study(corpus_path: Path, *, split: str = "test") -> dict[
                     "ablation": asdict(config),
                     "status": "not_run",
                     "reason": "experimental GLiNER remains disabled pending measured need",
+                }
+            )
+        elif config.use_hybrid_passage_scorer:
+            results.append(
+                {
+                    "ablation": asdict(config),
+                    "status": "not_run",
+                    "reason": "an explicitly installed local embedding model is required",
                 }
             )
         else:
