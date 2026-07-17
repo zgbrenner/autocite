@@ -15,6 +15,7 @@ from .document_ir import (
     locate_citations,
     parse_text_ir,
 )
+from .deterministic_rules import evaluate_document_rules, rule_coverage_matrix
 from .engine import CitationEngine
 from .formatters import generate_citation, supported_source_types
 from .jurisdictions import (
@@ -88,6 +89,11 @@ async def review_document(
     initial = _ENGINE.analyze(text, mode=resolved_mode)
     structured_citations = locate_citations(source_ir, _ENGINE)
     citation_graph = build_citation_graph(source_ir, mode=resolved_mode)
+    contextual_rule_findings = evaluate_document_rules(
+        source_ir,
+        citation_graph,
+        mode=resolved_mode,
+    )
     fixed = (
         _ENGINE.fix(text, mode=resolved_mode)
         if apply_safe_fixes and not slm_only
@@ -179,6 +185,19 @@ async def review_document(
         ],
         "document_ir": source_ir.summary(),
         "citation_graph": citation_graph.as_dict(),
+        "rule_findings": [finding.as_dict() for finding in contextual_rule_findings],
+        "correction_levels": {
+            level: sum(
+                finding.correction_level == level
+                for finding in contextual_rule_findings
+            )
+            for level in (
+                "safe_auto_fix",
+                "suggested_fix",
+                "review_required",
+                "unsupported",
+            )
+        },
         "initial_summary": initial["summary"],
         "final_summary": final["summary"],
         "remaining_issues": remaining,
@@ -416,6 +435,11 @@ def resolve_short_form(
         "mode": graph["mode"],
         "resolutions": graph["resolutions"],
     }
+
+
+def get_rule_coverage() -> dict[str, dict[str, Any]]:
+    """Return explicit implemented, partial, and unsupported rule coverage."""
+    return rule_coverage_matrix()
 
 
 def check_single_citation(

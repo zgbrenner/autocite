@@ -22,6 +22,7 @@ from .tools import (
     export_review_docx as _export_review_docx,
     get_citation_guidance as _get_citation_guidance,
     get_citation_graph as _get_citation_graph,
+    get_rule_coverage as _get_rule_coverage,
     get_jurisdiction_profile as _get_jurisdiction_profile,
     list_capabilities as _list_capabilities,
     list_jurisdiction_profiles as _list_jurisdiction_profiles,
@@ -285,6 +286,12 @@ def get_citation_graph(text: str, mode: str = "bluepages") -> dict[str, Any]:
 def resolve_short_form(text: str, mode: str = "bluepages") -> dict[str, Any]:
     """Resolve short forms or return all plausible antecedents and an abstention."""
     return _resolve_short_form(text, mode=mode)
+
+
+@mcp.tool(title="List deterministic rule coverage", annotations=_READ_ONLY)
+def get_rule_coverage() -> dict[str, dict[str, Any]]:
+    """Return tested coverage and unsupported source/rule families without overclaiming."""
+    return _get_rule_coverage()
 
 
 @mcp.tool(title="Apply safe citation fixes", annotations=_READ_ONLY)

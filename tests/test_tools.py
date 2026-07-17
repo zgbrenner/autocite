@@ -53,6 +53,7 @@ def test_capabilities_disclose_verification_limits():
 def test_check_citations_can_apply_safe_fixes():
     result = check_citations("42 USC §1983", mode="bluepages", apply_safe_fixes=True)
     assert result["fixed_text"] == "42 U.S.C. § 1983"
+    assert result["applied_edits"][0]["correction_level"] == "safe_auto_fix"
 
 
 @pytest.mark.asyncio
@@ -78,6 +79,13 @@ async def test_review_document_is_primary_model_friendly_workflow():
     assert result["source_verification_results"] == {
         "case_verification": result["case_verification"],
         "deep_review": result["deep_review_results"],
+    }
+    assert "rule_findings" in result
+    assert set(result["correction_levels"]) == {
+        "safe_auto_fix",
+        "suggested_fix",
+        "review_required",
+        "unsupported",
     }
 
 

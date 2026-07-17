@@ -1,0 +1,15 @@
+{
+  "cases": {"status": "partial", "implemented_rules": ["full form", "short form", "Id.", "pincites"]},
+  "statutes": {"status": "partial", "implemented_rules": ["full form", "short form", "Id."]},
+  "regulations": {"status": "partial", "implemented_rules": ["full form", "short form", "Id."]},
+  "constitutions": {"status": "partial", "implemented_rules": ["recognition"]},
+  "administrative_decisions_and_register_materials": {"status": "unsupported", "implemented_rules": []},
+  "books_and_treatises": {"status": "partial", "implemented_rules": ["supra", "hereinafter", "pincite review"]},
+  "journal_articles": {"status": "partial", "implemented_rules": ["recognition", "supra", "supra note", "pincites"]},
+  "newspapers_and_magazines": {"status": "unsupported", "implemented_rules": []},
+  "court_and_docket_documents": {"status": "partial", "implemented_rules": ["supra", "hereinafter"]},
+  "internet_sources_and_blogs": {"status": "partial", "implemented_rules": ["URL recognition", "Whitepages archive review"]},
+  "archival_sources": {"status": "partial", "implemented_rules": ["supra", "hereinafter"]},
+  "foreign_international_and_tribal": {"status": "unsupported", "implemented_rules": []},
+  "ai_generated_materials": {"status": "unsupported", "implemented_rules": []}
+}

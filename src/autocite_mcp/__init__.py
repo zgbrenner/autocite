@@ -10,6 +10,7 @@ from .citation_graph import (
     build_citation_graph,
 )
 from .document_ir import CitationLocation, CitationOccurrence, DocumentBlock, DocumentIR
+from .deterministic_rules import RuleFinding, RuleSpec, evaluate_document_rules
 from .formatters import generate_citation
 from .proposal_models import (
     CitationProposalModel,
@@ -28,6 +29,8 @@ __all__ = [
     "CitationOccurrence",
     "DocumentBlock",
     "DocumentIR",
+    "RuleFinding",
+    "RuleSpec",
     "OccurrenceNode",
     "ResolutionResult",
     "CitationProposal",
@@ -38,6 +41,7 @@ __all__ = [
     "SLMProposal",
     "generate_citation",
     "build_citation_graph",
+    "evaluate_document_rules",
     "validate_proposal",
 ]
 __version__ = "0.4.0"

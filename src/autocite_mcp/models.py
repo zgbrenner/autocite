@@ -23,3 +23,5 @@ class CitationIssue:
     original: str
     suggestion: str | None = None
     confidence: str = "medium"
+    correction_level: str = "review_required"
+    provenance: str = "deterministic_logic"
