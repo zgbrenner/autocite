@@ -44,4 +44,4 @@ __all__ = [
     "evaluate_document_rules",
     "validate_proposal",
 ]
-__version__ = "0.4.0"
+__version__ = "0.5.0"

@@ -1,0 +1,23 @@
+name: Release audit
+on: [workflow_dispatch]
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --extra dev --frozen
+      - run: uv run pytest
+      - run: uv run ruff check .
+      - run: uv run autocite eval --file evals/gold.jsonl
+      - run: uv run python training/evaluate_slm.py --safety-file evals/slm_safety.jsonl
+      - run: uv run python scripts/generate_sbom.py --output autocite-sbom.cdx.json
+      - run: uv build
+      - run: sha256sum dist/* > release-checksums.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-audit
+          path: |
+            autocite-sbom.cdx.json
+            release-checksums.txt
+            dist/
