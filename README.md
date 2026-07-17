@@ -188,6 +188,14 @@ Run the deterministic gold evaluation:
 uv run autocite eval --file evals/gold.jsonl
 ```
 
+Run the document-level safety and ablation framework:
+
+```bash
+uv run autocite eval-system --file evals/system/documents.jsonl --split test --ablations
+```
+
+The baseline, safety gates, known quality gaps, and current decision not to retrain Qwen are documented in [`docs/EVALUATION_REPORT.md`](docs/EVALUATION_REPORT.md).
+
 ## Install and run from a checkout
 
 AutoCite requires Python 3.10 or later.

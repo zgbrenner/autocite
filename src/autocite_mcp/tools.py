@@ -215,7 +215,7 @@ async def review_document(
             "cases": [],
         }
 
-    knowledge = get_knowledge_pack(resolved_mode, source_types)
+    knowledge = get_knowledge_pack(resolved_mode, source_types or None)
     knowledge["jurisdiction_profile"] = profile
     remaining = final["issues"]
     return {
