@@ -77,6 +77,28 @@ async def test_ablation_study_measures_local_paths_and_marks_unavailable_models(
     assert statuses["deterministic_retrieval"] == "measured"
     assert statuses["deterministic_qwen"] == "not_run"
     assert statuses["experimental_gliner"] == "not_run"
+    assert statuses["deterministic_hybrid_passage_scorer"] == "not_run"
+
+
+def test_hybrid_passage_scorer_ablation_arm_is_declared():
+    hybrid = next(item for item in ABLATION_CONFIGS if item.name == "deterministic_hybrid_passage_scorer")
+    assert hybrid.use_hybrid_passage_scorer is True
+    assert hybrid.use_qwen is False
+    assert hybrid.use_reranker is False
+    # Appended after the original five so their declared order/positions stay stable.
+    assert [item.name for item in ABLATION_CONFIGS[:5]] == [
+        "deterministic_only", "deterministic_qwen", "deterministic_retrieval",
+        "deterministic_qwen_retrieval", "deterministic_qwen_retrieval_reranker",
+    ]
+
+
+async def test_hybrid_passage_scorer_ablation_reports_reason_when_not_run():
+    report = await run_ablation_study(CORPUS, split="test")
+    hybrid_result = next(
+        item for item in report["results"] if item["ablation"]["name"] == "deterministic_hybrid_passage_scorer"
+    )
+    assert hybrid_result["status"] == "not_run"
+    assert "local embedding model" in hybrid_result["reason"]
 
 
 async def test_local_only_evaluation_path_makes_no_socket_connection(monkeypatch):

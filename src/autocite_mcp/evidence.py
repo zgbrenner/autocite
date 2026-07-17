@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import os
 import re
 import unicodedata
 from difflib import SequenceMatcher
-from typing import Any
+from typing import Any, Protocol, Sequence
 
 _WORD_RE = re.compile(r"[A-Za-z0-9]+")
 _SENTENCE_RE = re.compile(r"(?<=[.!?])\s+|\n+")
@@ -101,27 +102,159 @@ def _passage_windows(source_text: str, *, target_words: int = 70) -> list[str]:
     return windows
 
 
-def rank_passages(proposition: str, source_text: str, *, limit: int = 3) -> list[dict[str, Any]]:
-    """Rank candidate passages using disclosed lexical metrics."""
+_LEXICAL_METHOD = "token_jaccard_65_percent_plus_sequence_match_35_percent"
+_TOKEN_OVERLAP_WEIGHT = 0.65
+_SEQUENCE_SIMILARITY_WEIGHT = 0.35
+
+_HYBRID_METHOD = "hybrid_lexical_50_percent_plus_local_embedding_cosine_50_percent"
+_HYBRID_LEXICAL_WEIGHT = 0.5
+_HYBRID_EMBEDDING_WEIGHT = 0.5
+
+
+class PassageScorer(Protocol):
+    """Scores candidate passages against a proposition.
+
+    Every scorer must stamp each returned passage with the "scorer" key that actually
+    produced its "combined_score", so callers never mistake a fallback for a semantic run.
+    """
+
+    name: str
+
+    def score(self, proposition: str, passages: Sequence[str]) -> list[dict[str, Any]]: ...
+
+
+def _lexical_component_scores(proposition: str, passages: Sequence[str]) -> list[dict[str, Any]]:
     proposition_norm = _comparison_text(proposition)
     proposition_tokens = _tokens(proposition)
-    ranked: list[dict[str, Any]] = []
-    for passage in _passage_windows(source_text):
+    scored: list[dict[str, Any]] = []
+    for passage in passages:
         passage_tokens = _tokens(passage)
         union = proposition_tokens | passage_tokens
         overlap = len(proposition_tokens & passage_tokens) / len(union) if union else 0.0
         similarity = SequenceMatcher(None, proposition_norm, _comparison_text(passage)).ratio()
-        combined = (overlap * 0.65) + (similarity * 0.35)
-        ranked.append(
+        lexical_score = (overlap * _TOKEN_OVERLAP_WEIGHT) + (similarity * _SEQUENCE_SIMILARITY_WEIGHT)
+        scored.append(
             {
                 "passage": passage,
                 "token_overlap": round(overlap, 4),
                 "sequence_similarity": round(similarity, 4),
-                "combined_score": round(combined, 4),
-                "method": "token_jaccard_65_percent_plus_sequence_match_35_percent",
+                "lexical_score": round(lexical_score, 4),
             }
         )
-    ranked.sort(key=lambda item: item["combined_score"], reverse=True)
+    return scored
+
+
+class LexicalPassageScorer:
+    """Deterministic passage scorer: 65% token-set overlap + 35% sequence similarity.
+
+    This is the default, always-available scorer described in docs/SOURCE_REVIEW.md. It has
+    no external dependencies and never fails.
+    """
+
+    name = "lexical"
+
+    def score(self, proposition: str, passages: Sequence[str]) -> list[dict[str, Any]]:
+        scored = _lexical_component_scores(proposition, passages)
+        for item in scored:
+            item["combined_score"] = item["lexical_score"]
+            item["method"] = _LEXICAL_METHOD
+            item["scorer"] = self.name
+        return scored
+
+
+class HybridPassageScorer:
+    """Blends the deterministic lexical score with local-embedding cosine similarity.
+
+    The embedding backend defaults to a lazily loaded, offline-only local sentence-transformers
+    bi-encoder (same lazy-load/offline-only pattern and default model as
+    ``retrieval.LocalEmbeddingRuleRetriever``). It can also be swapped for any object exposing an
+    ``encode(texts) -> Sequence[Sequence[float]]`` method, which tests use to inject a small
+    deterministic fake instead of pulling in sentence-transformers/torch.
+
+    Graceful degradation is mandatory here: if the backend is unavailable or raises for any
+    reason (missing optional dependency, missing/uncached model, or any other runtime error),
+    this scorer falls back to the plain lexical score instead of raising. The fallback is never
+    silent -- every affected passage is stamped with ``scorer="lexical_fallback_hybrid_unavailable"``
+    and a ``fallback_reason`` explaining why.
+    """
+
+    name = "hybrid"
+
+    def __init__(
+        self,
+        embedding_backend: Any | None = None,
+        *,
+        model_path: str = "BAAI/bge-small-en-v1.5",
+        offline_only: bool = True,
+    ) -> None:
+        if embedding_backend is not None:
+            self._backend = embedding_backend
+        else:
+            from .retrieval import LocalPassageEmbeddingBackend
+
+            self._backend = LocalPassageEmbeddingBackend(model_path, offline_only=offline_only)
+
+    def score(self, proposition: str, passages: Sequence[str]) -> list[dict[str, Any]]:
+        scored = _lexical_component_scores(proposition, passages)
+        if not scored:
+            return scored
+        try:
+            vectors = self._backend.encode([proposition, *passages])
+        except Exception as exc:  # noqa: BLE001 - any backend failure must degrade, never raise
+            for item in scored:
+                item["combined_score"] = item["lexical_score"]
+                item["method"] = _LEXICAL_METHOD
+                item["scorer"] = "lexical_fallback_hybrid_unavailable"
+                item["fallback_reason"] = f"{type(exc).__name__}: {exc}"
+            return scored
+        query_vector = vectors[0]
+        for index, item in enumerate(scored, start=1):
+            embedding_similarity = float(sum(a * b for a, b in zip(query_vector, vectors[index])))
+            item["embedding_similarity"] = round(embedding_similarity, 4)
+            item["combined_score"] = round(
+                (item["lexical_score"] * _HYBRID_LEXICAL_WEIGHT)
+                + (embedding_similarity * _HYBRID_EMBEDDING_WEIGHT),
+                4,
+            )
+            item["method"] = _HYBRID_METHOD
+            item["scorer"] = "hybrid_local_embedding"
+        return scored
+
+
+def resolve_default_passage_scorer() -> PassageScorer:
+    """Select the passage scorer from AUTOCITE_PASSAGE_SCORER (defaults to "lexical").
+
+    Accepted values are "lexical" (default) and "hybrid". This only selects and constructs the
+    scorer object -- construction never loads a model, so choosing "hybrid" is cheap even when
+    sentence-transformers is not installed; the optional dependency is only touched, and the
+    fallback path only triggered, the first time a passage is actually scored.
+    """
+    choice = os.getenv("AUTOCITE_PASSAGE_SCORER", "lexical").strip().lower()
+    if choice == "hybrid":
+        return HybridPassageScorer()
+    if choice not in {"", "lexical"}:
+        raise ValueError(f"AUTOCITE_PASSAGE_SCORER must be 'lexical' or 'hybrid', got {choice!r}")
+    return LexicalPassageScorer()
+
+
+def rank_passages(
+    proposition: str,
+    source_text: str,
+    *,
+    limit: int = 3,
+    scorer: PassageScorer | None = None,
+) -> list[dict[str, Any]]:
+    """Rank candidate passages using the configured scorer (lexical by default).
+
+    Pass ``scorer`` explicitly to inject a specific scorer (used by tests and by
+    ``DeepReviewer``); otherwise the scorer is resolved from ``AUTOCITE_PASSAGE_SCORER``.
+    Results are deterministic: scores come from fixed weights and ties keep the stable,
+    document-order position of the passage window they came from.
+    """
+    resolved_scorer = scorer or resolve_default_passage_scorer()
+    windows = _passage_windows(source_text)
+    scored = resolved_scorer.score(proposition, windows)
+    ranked = sorted(scored, key=lambda item: -item["combined_score"])
     return ranked[: max(0, limit)]
 
 
@@ -153,6 +286,13 @@ def _pincite_result(pincite: str | None, source_text: str, passages: list[dict[s
     }
 
 
+_PROPOSITION_PROVENANCE_BY_SCORER = {
+    "lexical": "lexical_candidate_ranking_only",
+    "hybrid_local_embedding": "hybrid_lexical_and_local_embedding_candidate_ranking",
+    "lexical_fallback_hybrid_unavailable": "lexical_candidate_ranking_only_hybrid_scorer_unavailable_fallback",
+}
+
+
 def analyze_case_evidence(
     *,
     document_text: str,
@@ -161,8 +301,13 @@ def analyze_case_evidence(
     source_text: str,
     pincite: str | None = None,
     include_source_text: bool = False,
+    passage_scorer: PassageScorer | None = None,
 ) -> dict[str, Any]:
-    """Prepare source evidence for a host model or human reviewer."""
+    """Prepare source evidence for a host model or human reviewer.
+
+    ``passage_scorer`` is injected explicitly by callers such as ``DeepReviewer``; when omitted
+    it is resolved from ``AUTOCITE_PASSAGE_SCORER`` (lexical by default).
+    """
     proposition = extract_proposition(document_text, citation_start)
     quotes = extract_nearby_quotes(document_text, citation_start)
     quote_results = [match_quote(quote, source_text) | {"quote": quote} for quote in quotes]
@@ -171,7 +316,9 @@ def analyze_case_evidence(
         if quote_results
         else {"status": "not_supplied", "score": 0.0, "matched_excerpt": "", "quote": ""}
     )
-    passages = rank_passages(proposition, source_text)
+    resolved_scorer = passage_scorer or resolve_default_passage_scorer()
+    passages = rank_passages(proposition, source_text, scorer=resolved_scorer)
+    scorer_used = passages[0]["scorer"] if passages else resolved_scorer.name
     result: dict[str, Any] = {
         "citation": citation_text,
         "quotation": quote_result,
@@ -179,14 +326,15 @@ def analyze_case_evidence(
         "proposition": {
             "text": proposition,
             "candidate_passages": passages,
+            "scorer": scorer_used,
             "conclusion": "not_determined",
             "requires_legal_judgment": True,
-            "warning": "Lexical similarity ranks evidence for review; it does not determine legal support, scope, validity, or controlling weight.",
+            "warning": "Passage ranking (lexical, or lexical blended with local-embedding similarity) ranks evidence for review; it does not determine legal support, scope, validity, or controlling weight.",
         },
         "provenance": {
             "quotation": "source_verified_when_exact_or_normalized",
             "pincite": "source_verified_only_when_explicit_marker_present",
-            "proposition": "lexical_candidate_ranking_only",
+            "proposition": _PROPOSITION_PROVENANCE_BY_SCORER.get(scorer_used, "lexical_candidate_ranking_only"),
         },
     }
     if include_source_text:

@@ -12,6 +12,27 @@ from starlette.responses import JSONResponse
 from . import __version__
 from .formatters import generate_citation as _generate_citation
 from .knowledge import CORE_RULES, get_knowledge_pack
+from .output_models import (
+    CheckCitationsResult,
+    CheckSingleCitationOutput,
+    CitationGraphModel,
+    ConvertCitationOutput,
+    ExplainIssueOutput,
+    ExportReviewDocxOutput,
+    GenerateCitationOutput,
+    HealthCheckOutput,
+    JurisdictionProfile,
+    KnowledgePack,
+    ListCapabilitiesOutput,
+    OpenCitecheckWorkspaceOutput,
+    CaseVerificationOutput,
+    CertificationReportOutput,
+    ResolveShortFormOutput,
+    ReviewDocumentOutput,
+    ReviewUploadedDocumentOutput,
+    RuleCoverageEntry,
+    RuleRetrievalOutput,
+)
 from .proposal_models import enforce_model_source_policy
 from .rules import RULE_CATALOG, validate_mode
 from .slm_runtime import DEFAULT_MODEL
@@ -86,7 +107,7 @@ async def health_route(request: Request) -> JSONResponse:
 
 
 @mcp.tool(title="Check local AutoCite health and privacy status", annotations=_READ_ONLY)
-def health_check(offline: bool = True) -> dict[str, Any]:
+def health_check(offline: bool = True) -> HealthCheckOutput:
     """Return readiness, privacy defaults, installed-model status, and network capabilities."""
     return health_report(offline=offline)
 
@@ -121,7 +142,7 @@ async def review_document(
     retrieval_top_k: int = 3,
     slm_only: bool = False,
     apply_slm_fixes: bool = False,
-) -> dict[str, Any]:
+) -> ReviewDocumentOutput:
     """Start here for citation review in legal writing.
 
     Formatting and safe fixes are local. Set deep_review=true only when the user requests
@@ -191,7 +212,7 @@ async def review_uploaded_document(
     retrieval_top_k: int = 3,
     slm_only: bool = False,
     apply_slm_fixes: bool = False,
-) -> dict[str, Any]:
+) -> ReviewUploadedDocumentOutput:
     """Review TXT, Markdown, DOCX, or text-based PDF from an authorized file reference.
 
     The file object must contain data_base64 or an authorized download_url, plus optional
@@ -235,7 +256,7 @@ def export_review_docx(
     corrected_text: str,
     tracked: bool = True,
     filename: str = "autocite-review.docx",
-) -> dict[str, Any]:
+) -> ExportReviewDocxOutput:
     """Return an in-memory DOCX artifact as base64, optionally with tracked changes."""
     return _export_review_docx(
         original_text,
@@ -254,7 +275,7 @@ async def generate_certification_report(
     verify_cases: bool = False,
     deep_review: bool = False,
     prepared_for: str | None = None,
-) -> dict[str, Any]:
+) -> CertificationReportOutput:
     """Produce a court- and reviewer-facing audit trail for a document's citations.
 
     The report truthfully separates checks that ran (deterministic format review;
@@ -281,7 +302,7 @@ async def open_citecheck_workspace(
     mode: str = "auto",
     jurisdiction: str | None = None,
     deep_review: bool = False,
-) -> dict[str, Any]:
+) -> OpenCitecheckWorkspaceOutput:
     """Run a citecheck and render a filterable workspace in MCP Apps-capable clients.
 
     Text-only clients still receive a concise structured summary and corrected text.
@@ -303,13 +324,13 @@ async def open_citecheck_workspace(
 
 
 @mcp.tool(title="Get a jurisdiction profile", annotations=_READ_ONLY)
-def get_jurisdiction_profile(identifier: str = "federal") -> dict[str, Any]:
+def get_jurisdiction_profile(identifier: str = "federal") -> JurisdictionProfile:
     """Return federal, California, or safe generic state citation priorities."""
     return _get_jurisdiction_profile(identifier)
 
 
 @mcp.tool(title="List jurisdiction profiles", annotations=_READ_ONLY)
-def list_jurisdiction_profiles() -> list[dict[str, Any]]:
+def list_jurisdiction_profiles() -> list[JurisdictionProfile]:
     """List federal and all fifty state profiles with verification flags."""
     return _list_jurisdiction_profiles()
 
@@ -318,7 +339,7 @@ def list_jurisdiction_profiles() -> list[dict[str, Any]]:
 def get_citation_guidance(
     mode: str = "bluepages",
     source_type: str = "all",
-) -> dict[str, Any]:
+) -> KnowledgePack:
     """Get a compact original citation playbook for one mode and source type."""
     return _get_citation_guidance(mode=mode, source_type=source_type)
 
@@ -328,25 +349,25 @@ def check_citations(
     text: str,
     mode: str = "bluepages",
     apply_safe_fixes: bool = False,
-) -> dict[str, Any]:
+) -> CheckCitationsResult:
     """Advanced: audit legal writing in an explicitly selected citation mode."""
     return _check_citations(text, mode=mode, apply_safe_fixes=apply_safe_fixes)
 
 
 @mcp.tool(title="Get the document citation graph", annotations=_READ_ONLY)
-def get_citation_graph(text: str, mode: str = "bluepages") -> dict[str, Any]:
+def get_citation_graph(text: str, mode: str = "bluepages") -> CitationGraphModel:
     """Return conservative authority identities, occurrences, edges, and resolutions."""
     return _get_citation_graph(text, mode=mode)
 
 
 @mcp.tool(title="Resolve citation short forms", annotations=_READ_ONLY)
-def resolve_short_form(text: str, mode: str = "bluepages") -> dict[str, Any]:
+def resolve_short_form(text: str, mode: str = "bluepages") -> ResolveShortFormOutput:
     """Resolve short forms or return all plausible antecedents and an abstention."""
     return _resolve_short_form(text, mode=mode)
 
 
 @mcp.tool(title="List deterministic rule coverage", annotations=_READ_ONLY)
-def get_rule_coverage() -> dict[str, dict[str, Any]]:
+def get_rule_coverage() -> dict[str, RuleCoverageEntry]:
     """Return tested coverage and unsupported source/rule families without overclaiming."""
     return _get_rule_coverage()
 
@@ -359,7 +380,7 @@ def get_rule_context(
     rule_family: str | None = None,
     jurisdiction: str | None = None,
     top_k: int = 3,
-) -> dict[str, Any]:
+) -> RuleRetrievalOutput:
     """Retrieve approved local Markdown summaries with exact chunk attribution."""
     return _get_rule_context(
         query,
@@ -372,7 +393,7 @@ def get_rule_context(
 
 
 @mcp.tool(title="Apply safe citation fixes", annotations=_READ_ONLY)
-def fix_citations(text: str, mode: str = "bluepages") -> dict[str, Any]:
+def fix_citations(text: str, mode: str = "bluepages") -> CheckCitationsResult:
     """Advanced: apply only deterministic, high-confidence mechanical citation fixes."""
     return _check_citations(text, mode=mode, apply_safe_fixes=True)
 
@@ -381,7 +402,7 @@ def fix_citations(text: str, mode: str = "bluepages") -> dict[str, Any]:
 def check_single_citation(
     citation: str,
     mode: str = "bluepages",
-) -> dict[str, Any]:
+) -> CheckSingleCitationOutput:
     """Check exactly one recognized citation and return a focused correction report."""
     return _check_single_citation(citation, mode=mode)
 
@@ -391,7 +412,7 @@ def convert_citation(
     citation: str,
     target_mode: str,
     output_style: str = "plain",
-) -> dict[str, Any]:
+) -> ConvertCitationOutput:
     """Convert a recognized citation using only facts already present in it."""
     return _convert_citation(
         citation,
@@ -406,7 +427,7 @@ def generate_citation(
     fields: dict[str, Any],
     mode: str = "bluepages",
     output_style: str = "plain",
-) -> dict[str, Any]:
+) -> GenerateCitationOutput:
     """Generate a citation from structured source facts; error rather than guess."""
     citation = _generate_citation(
         source_type,
@@ -424,19 +445,19 @@ def generate_citation(
 
 
 @mcp.tool(title="Verify U.S. case citations", annotations=_NETWORK_READ)
-async def verify_case_citations(text: str) -> dict[str, Any]:
+async def verify_case_citations(text: str) -> CaseVerificationOutput:
     """Verify and normalize U.S. case citations through optional CourtListener lookup."""
     return await _verify_case_citations(text)
 
 
 @mcp.tool(title="Explain a citation issue", annotations=_READ_ONLY)
-def explain_issue(code: str, mode: str = "bluepages") -> dict[str, Any]:
+def explain_issue(code: str, mode: str = "bluepages") -> ExplainIssueOutput:
     """Explain an AutoCite issue code and its relevant rule family."""
     return _explain_issue(code, mode=mode)
 
 
 @mcp.tool(title="List AutoCite capabilities", annotations=_READ_ONLY)
-def list_capabilities() -> dict[str, Any]:
+def list_capabilities() -> ListCapabilitiesOutput:
     """List supported workflows, source types, verification coverage, and guardrails."""
     return _list_capabilities()
 

@@ -205,6 +205,32 @@ class LocalEmbeddingRuleRetriever:
         return sorted(ranked, key=lambda item: (-item.score, item.chunk.chunk_id))[:top_k]
 
 
+class LocalPassageEmbeddingBackend:
+    """Lazy-loaded, offline-only sentence-transformers bi-encoder for candidate-passage scoring.
+
+    Mirrors ``LocalEmbeddingRuleRetriever``'s lazy-load/offline-only pattern and default model.
+    Used by ``evidence.HybridPassageScorer``; consumers there catch any error this raises (import
+    failure, no cached model under offline-only load, etc.) and fall back to lexical scoring.
+    """
+
+    def __init__(self, model_path: str = "BAAI/bge-small-en-v1.5", *, offline_only: bool = True) -> None:
+        self.model_path = model_path
+        self.offline_only = offline_only
+        self._model: Any = None
+
+    def encode(self, texts: Sequence[str]) -> Any:
+        if self._model is None:
+            try:
+                from sentence_transformers import SentenceTransformer
+            except ImportError as exc:
+                raise RuntimeError("hybrid passage scoring requires the optional 'retrieval' dependencies") from exc
+            self._model = SentenceTransformer(
+                self.model_path,
+                local_files_only=self.offline_only,
+            )
+        return self._model.encode(list(texts), normalize_embeddings=True)
+
+
 class CandidateReranker(Protocol):
     def rerank(self, query: str, candidates: Sequence[RetrievedRuleChunk]) -> list[RetrievedRuleChunk]: ...
 

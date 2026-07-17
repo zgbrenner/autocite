@@ -88,6 +88,14 @@ def test_rule_index_round_trip_is_reproducible(tmp_path: Path):
     assert RuleLibrary.load_index(path) == library
 
 
+def test_local_passage_embedding_backend_reports_missing_optional_dependency():
+    from autocite_mcp.retrieval import LocalPassageEmbeddingBackend
+
+    backend = LocalPassageEmbeddingBackend()
+    with pytest.raises(RuntimeError, match="optional 'retrieval' dependencies"):
+        backend.encode(["a", "b"])
+
+
 def test_public_rule_context_returns_attributed_chunks():
     from autocite_mcp.tools import get_rule_context
 

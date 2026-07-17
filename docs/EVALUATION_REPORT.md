@@ -22,7 +22,9 @@ Measured quality exposed known gaps rather than hiding them: source-type accurac
 
 ## Ablations
 
-The framework defines deterministic-only, deterministic+Qwen, deterministic+retrieval, deterministic+Qwen+retrieval, deterministic+Qwen+retrieval+reranker, and experimental GLiNER configurations. Dependency-free deterministic and retrieval paths run in ordinary CI. Qwen, reranker, GPU, and GLiNER rows are explicitly `not_run` unless their local runtimes are deliberately installed; the report never substitutes fabricated measurements.
+The framework defines deterministic-only, deterministic+Qwen, deterministic+retrieval, deterministic+Qwen+retrieval, deterministic+Qwen+retrieval+reranker, experimental GLiNER, and deterministic+hybrid-passage-scorer configurations. Dependency-free deterministic and retrieval paths run in ordinary CI. Qwen, reranker, GPU, GLiNER, and hybrid-passage-scorer rows are explicitly `not_run` unless their local runtimes are deliberately installed; the report never substitutes fabricated measurements.
+
+The hybrid-passage-scorer arm measures `evidence.HybridPassageScorer` (candidate-passage ranking blended with local-embedding cosine similarity, selectable via `AUTOCITE_PASSAGE_SCORER=hybrid`) against the deterministic-only lexical passage ranker described in [`SOURCE_REVIEW.md`](SOURCE_REVIEW.md). It requires the optional `retrieval` install extra and a locally cached sentence-transformers model, so it is measured only when that runtime is deliberately installed; otherwise passage ranking transparently falls back to lexical scoring and is never reported as hybrid.
 
 ## Failure taxonomy and retraining decision
 
