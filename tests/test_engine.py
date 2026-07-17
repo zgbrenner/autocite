@@ -18,6 +18,46 @@ def test_fixes_safe_mechanical_errors_without_inventing_facts():
     assert all(edit["confidence"] == "high" for edit in result["applied_edits"])
 
 
+def test_bare_word_id_outside_citation_context_is_left_alone():
+    text = "Users must enter their id before proceeding."
+    result = CitationEngine().fix(text, mode="bluepages")
+    assert result["fixed_text"] == text
+    report = CitationEngine().analyze(text, mode="bluepages")
+    assert not any(issue["code"] == "SHORT_FORM_CAPITALIZATION" for issue in report["issues"])
+    assert not any(issue["code"] == "SHORT_FORM_ORPHAN_ID" for issue in report["issues"])
+
+
+def test_id_with_signal_and_pincite_is_still_flagged_and_fixed():
+    text = "Smith v. Jones, 410 U.S. 113 (1973). See id. at 5."
+    result = CitationEngine().fix(text, mode="bluepages")
+    assert result["fixed_text"] == "Smith v. Jones, 410 U.S. 113 (1973). See Id. at 5."
+
+
+def test_id_comma_pincite_variant_is_still_flagged_and_fixed():
+    text = "Smith v. Jones, 410 U.S. 113 (1973). id., at 100."
+    result = CitationEngine().fix(text, mode="bluepages")
+    assert result["fixed_text"] == "Smith v. Jones, 410 U.S. 113 (1973). Id., at 100."
+
+
+def test_bare_federal_reporter_is_recognized_and_normalized():
+    text = "126 f. 605 (2d Cir. 1903)"
+    result = CitationEngine().fix(text, mode="bluepages")
+    assert result["fixed_text"] == "126 F. 605 (2d Cir. 1903)"
+
+
+def test_already_canonical_bare_federal_reporter_raises_no_issue():
+    report = CitationEngine().analyze("126 F. 605 (2d Cir. 1903)", mode="bluepages")
+    assert not any(issue["code"] == "REPORTER_ABBREVIATION" for issue in report["issues"])
+
+
+def test_federal_reporter_suffixes_still_match():
+    for citation in ("5 F.2d 100", "5 F.3d 100", "5 F. Supp. 100", "5 F. Supp. 2d 100"):
+        report = CitationEngine().analyze(citation, mode="bluepages")
+        assert not any(
+            issue["code"] == "REPORTER_ABBREVIATION" for issue in report["issues"]
+        ), citation
+
+
 def test_flags_orphan_id_short_form():
     report = CitationEngine().analyze("Id. at 12.", mode="whitepages")
     assert any(issue["code"] == "SHORT_FORM_ORPHAN_ID" for issue in report["issues"])

@@ -16,19 +16,23 @@ CASE_FULL = re.compile(
 SHORT_CASE = re.compile(
     r"\b(?P<name>[A-Z][A-Za-z0-9.&' -]{1,50}),\s*"
     r"(?P<volume>\d{1,4})\s+(?P<reporter>U\.S\.|F\.(?:2d|3d|Supp\.?(?: 2d| 3d)?))\s+"
-    r"at\s+(?P<pincite>\d{1,6}(?:[-–]\d{1,6})?)\b"
+    r"at\s+(?P<pincite>\d{1,6}(?:[-–—]\d{1,6})?)\b"
 )
-ID_FORM = re.compile(r"\bId\.(?:\s+at\s+\d{1,6}(?:[-–]\d{1,6})?)?", re.I)
+ID_FORM = re.compile(r"\bId\.(?:\s+at\s+\d{1,6}(?:[-–—]\d{1,6})?)?", re.I)
 SUPRA_NOTE = re.compile(
     r"\b(?P<label>[A-Z][A-Za-z0-9.&' -]{0,60}?),\s+supra\s+note\s+(?P<note>\d+)"
-    r"(?:,\s*at\s+\d{1,6})?",
+    r"(?:,\s*at\s+\d{1,6}(?:[-–—]\d{1,6})?)?",
     re.I,
 )
 SUPRA = re.compile(
-    r"\b(?P<label>[A-Z][A-Za-z0-9.&' -]{0,60}?),\s+supra(?:,\s*at\s+\d{1,6})?",
+    r"\b(?P<label>[A-Z][A-Za-z0-9.&' -]{0,60}?),\s+supra(?:,\s*at\s+\d{1,6}(?:[-–—]\d{1,6})?)?",
     re.I,
 )
-STATUTORY_SHORT = re.compile(r"(?<![A-Za-z.\d])§{1,2}\s*(?P<section>[\w.()\-]+)")
+STATUTORY_SHORT = re.compile(
+    r"(?:(?P<code>U\.?\s*S\.?\s*C\.?|C\.?\s*F\.?\s*R\.?)\s+)?"
+    r"(?<![A-Za-z.\d])§{1,2}\s*(?P<section>[\w.()\-]+)",
+    re.IGNORECASE,
+)
 HEREINAFTER_DEF = re.compile(r"\(hereinafter\s+[“\"](?P<alias>[^”\"]+)[”\"]\)", re.I)
 ARTICLE_CONTEXT = re.compile(
     r"(?P<author>[A-Z][A-Za-z.' -]+),\s*(?P<title>[^,]{2,100}),\s*$"
@@ -231,6 +235,9 @@ def _raw_occurrences(ir: DocumentIR) -> list[_RawOccurrence]:
         if section not in full_statute_sections:
             continue
         location = _location(ir, match.start(), match.end())
+        components = {"section": match.group("section")}
+        if match.group("code"):
+            components["code"] = match.group("code")
         raw.append(
             _RawOccurrence(
                 match.group(0),
@@ -239,7 +246,7 @@ def _raw_occurrences(ir: DocumentIR) -> list[_RawOccurrence]:
                 "statute",
                 "statutory_short",
                 location,
-                {"section": match.group("section")},
+                components,
                 _logical_key(ir, location, match.start()),
             )
         )
@@ -423,6 +430,17 @@ def build_citation_graph(ir: DocumentIR, *, mode: str = "bluepages") -> Citation
             aliases[_normalize(match.group("alias"))] = prior[-1].authority_id
             edges.append(CitationEdge("hereinafter_definition", prior[-1].occurrence_id, prior[-1].authority_id, {"alias": match.group("alias")}))
 
+    # Running map of each occurrence's *effective* authority, kept up to date
+    # in document order. Full citations start pre-populated; short forms are
+    # added as they resolve, so a later "Id." can chain through a prior
+    # "Id." (or other short form) rather than only ever looking at full
+    # citations.
+    resolved_authority_by_occurrence: dict[str, str] = {
+        occurrence.occurrence_id: occurrence.authority_id
+        for occurrence in occurrence_nodes
+        if occurrence.authority_id
+    }
+
     for index, occurrence in enumerate(occurrence_nodes):
         if occurrence.form == "full":
             continue
@@ -437,8 +455,11 @@ def build_citation_graph(ir: DocumentIR, *, mode: str = "bluepages") -> Citation
             else:
                 group = _group_before(ir, occurrence_nodes, index)
                 prior = occurrence_nodes[index - 1]
-                if prior.authority_id:
-                    candidates.append(_candidate(authority_by_id[prior.authority_id], prior, 100, "immediately_preceding_authority"))
+                prior_authority_id = prior.authority_id or resolved_authority_by_occurrence.get(
+                    prior.occurrence_id
+                )
+                if prior_authority_id:
+                    candidates.append(_candidate(authority_by_id[prior_authority_id], prior, 100, "immediately_preceding_authority"))
                 gap = ir.text[prior.end : occurrence.start]
                 if ";" in gap:
                     disqualifying.append("intervening_citation_clause")
@@ -446,10 +467,10 @@ def build_citation_graph(ir: DocumentIR, *, mode: str = "bluepages") -> Citation
                     disqualifying.append("preceding_citation_group_has_multiple_authorities")
                 if re.search(r"[A-Za-z]{3,}", gap):
                     disqualifying.append("intervening_non_citation_material")
-                if prior.authority_id is None:
+                if prior_authority_id is None:
                     disqualifying.append("no_immediately_preceding_authority")
-                if not disqualifying and prior.authority_id:
-                    resolved = prior.authority_id
+                if not disqualifying and prior_authority_id:
+                    resolved = prior_authority_id
                     method = "immediately_preceding_single_authority"
                     confidence = "high"
         elif occurrence.form == "short_case":
@@ -481,11 +502,16 @@ def build_citation_graph(ir: DocumentIR, *, mode: str = "bluepages") -> Citation
                 disqualifying.append("multiple_plausible_prior_cases")
         elif occurrence.form == "statutory_short":
             section = _normalize(occurrence.components.get("section"))
+            code_hint = _reporter(occurrence.components.get("code")) if occurrence.components.get("code") else ""
             prior_sources = [item for item in occurrence_nodes[:index] if item.form == "full" and item.source_type in {"statute", "regulation"} and item.authority_id]
             for prior in reversed(prior_sources):
                 node = authority_by_id[prior.authority_id]
-                if _normalize(node.components.get("section")) == section:
-                    candidates.append(_candidate(node, prior, 90, "section_match"))
+                if _normalize(node.components.get("section")) != section:
+                    continue
+                if code_hint and _reporter(node.components.get("code")) != code_hint:
+                    continue
+                facts = ("section_match", "code_match") if code_hint else ("section_match",)
+                candidates.append(_candidate(node, prior, 90, *facts))
             unique = {item.authority_id for item in candidates}
             if len(unique) == 1:
                 resolved = next(iter(unique))
@@ -568,6 +594,7 @@ def build_citation_graph(ir: DocumentIR, *, mode: str = "bluepages") -> Citation
                 disqualifying.append("no_prior_hereinafter_definition")
         if resolved:
             edges.append(CitationEdge(f"{occurrence.form}_to_antecedent", occurrence.occurrence_id, resolved, {"method": method}, "deterministic_logic"))
+            resolved_authority_by_occurrence[occurrence.occurrence_id] = resolved
         resolutions.append(
             ResolutionResult(
                 occurrence.occurrence_id,
