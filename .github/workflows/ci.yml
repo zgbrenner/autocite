@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.10", "3.12", "3.13"]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -29,7 +29,7 @@ jobs:
           name: pytest-results-${{ matrix.python-version }}
           path: pytest-results.xml
           if-no-files-found: ignore
-      - run: uv run python -m py_compile src/autocite_mcp/*.py training/*.py
+      - run: uv run python -m compileall -q src/autocite_mcp training
       - run: uv run autocite eval --file evals/gold.jsonl
       - run: uv run python training/build_dataset.py --output /tmp/autocite-slm.jsonl
       - run: uv run python training/evaluate_slm.py --safety-file evals/slm_safety.jsonl

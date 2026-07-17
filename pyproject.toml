@@ -66,6 +66,9 @@ autocite-desktop = "autocite_mcp.desktop:main"
 [tool.hatch.build.targets.wheel]
 packages = ["src/autocite_mcp"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"src/autocite_mcp/py.typed" = "autocite_mcp/py.typed"
+
 [tool.hatch.build.targets.sdist]
 exclude = [
   "/reference",
@@ -75,7 +78,7 @@ exclude = [
 ]
 
 [tool.pytest.ini_options]
-addopts = "-q"
+addopts = "-q --strict-markers"
 testpaths = ["tests"]
 asyncio_mode = "auto"
 markers = [

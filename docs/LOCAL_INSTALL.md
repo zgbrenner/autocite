@@ -22,6 +22,8 @@ The health report discloses privacy defaults, every network-capable component, i
 
 ## Model lifecycle
 
+Installed models are stored under `~/.local/share/autocite/models` by default. Set `AUTOCITE_MODEL_DIR` to point at a different model root (for example, an offline transfer location or a shared cache path).
+
 Install only from an already downloaded local directory:
 
 ```bash
@@ -34,6 +36,6 @@ Installation creates a SHA-256 manifest. Removal is irreversible and requires ex
 
 ## Host connection
 
-Stdio is default. Configure a compatible host to run `autocite-mcp`. Optional HTTP requires `AUTOCITE_TRANSPORT=streamable-http` and is restricted to `127.0.0.1`, `localhost`, or `::1`.
+Stdio is default. Configure a compatible host to run `autocite-mcp`. Optional HTTP requires `AUTOCITE_TRANSPORT=streamable-http` and binds to `127.0.0.1`, `localhost`, or `::1` by default. Binding any other host requires both `AUTOCITE_ALLOW_REMOTE=1` and a configured `AUTOCITE_API_TOKEN`; see [`HOSTING.md`](HOSTING.md).
 
 No telemetry or document logging is enabled. Review is in-memory. Exports are written only to a caller-selected location. CourtListener verification is the only ordinary review operation that can send citation data externally, and only after explicit enablement.
