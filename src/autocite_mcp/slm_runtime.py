@@ -34,6 +34,7 @@ class CitationTask:
     context_start: int
     deterministic_issues: tuple[dict[str, Any], ...]
     components: dict[str, Any]
+    retrieved_rule_chunks: tuple[dict[str, Any], ...] = ()
 
 
 class SLMRuntime(Protocol):
@@ -95,6 +96,7 @@ def build_slm_tasks(
     deterministic_result: Mapping[str, Any],
     *,
     context_chars: int = 400,
+    retrieved_rule_chunks: tuple[dict[str, Any], ...] = (),
 ) -> list[CitationTask]:
     tasks: list[CitationTask] = []
     issues = list(deterministic_result.get("issues") or [])
@@ -120,6 +122,7 @@ def build_slm_tasks(
                 context_start=context_start,
                 deterministic_issues=overlapping,
                 components=dict(raw.get("components") or {}),
+                retrieved_rule_chunks=retrieved_rule_chunks,
             )
         )
     return tasks
@@ -139,6 +142,12 @@ def render_prompt(task: CitationTask) -> str:
         "end": task.citation_end,
         "source_type": task.source_type,
         "mode": task.mode,
+        "retrieved_rule_chunks": list(task.retrieved_rule_chunks),
+        "permitted_rule_chunk_ids": [
+            item.get("chunk_id")
+            for item in task.retrieved_rule_chunks
+            if item.get("chunk_id")
+        ],
     }
     return json.dumps(
         {"system_prompt": system_prompt, "task": payload},
@@ -169,12 +178,14 @@ async def run_hybrid_review(
     runtime: SLMRuntime,
     apply_slm_fixes: bool = False,
     context_chars: int = 400,
+    retrieved_rule_chunks: tuple[dict[str, Any], ...] = (),
 ) -> dict[str, Any]:
     tasks = build_slm_tasks(
         text,
         mode,
         deterministic_result,
         context_chars=context_chars,
+        retrieved_rule_chunks=retrieved_rule_chunks,
     )
     if not tasks:
         return {
@@ -228,6 +239,11 @@ async def run_hybrid_review(
             expected_end=task.citation_end,
             known_issue_codes=KNOWN_PROPOSAL_CODES,
             deterministic_issues=task.deterministic_issues,
+            supplied_rule_chunk_ids={
+                str(item["chunk_id"])
+                for item in task.retrieved_rule_chunks
+                if item.get("chunk_id")
+            },
         )
         validations.append(validation)
         if validation.valid and any(

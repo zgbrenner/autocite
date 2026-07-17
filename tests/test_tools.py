@@ -75,7 +75,8 @@ async def test_review_document_is_primary_model_friendly_workflow():
     assert result["deterministic_edits"] == result["applied_edits"]
     assert result["remaining_deterministic_issues"] == result["remaining_issues"]
     assert result["model_proposals"] == []
-    assert result["retrieved_guidance"] == result["knowledge"]
+    assert result["retrieved_guidance"] == result["retrieval"]["chunks"]
+    assert result["retrieval"]["local_only"] is True
     assert result["source_verification_results"] == {
         "case_verification": result["case_verification"],
         "deep_review": result["deep_review_results"],

@@ -41,6 +41,15 @@ slm = [
 slm-quantized = [
   "bitsandbytes>=0.46,<1",
 ]
+retrieval = [
+  "sentence-transformers>=3,<6",
+]
+retrieval-reranker = [
+  "sentence-transformers>=3,<6",
+]
+experimental-gliner = [
+  "gliner>=0.2,<1",
+]
 dev = [
   "pytest>=8,<10",
   "pytest-asyncio>=0.24,<2",

@@ -58,6 +58,8 @@ Each review also builds a document-wide citation graph. It keeps conservative au
 
 Contextual findings come from declared deterministic rule families and carry one of four correction levels. Only `safe_auto_fix` findings can be applied without approval. Exact supported, partial, and unsupported coverage is published in [`docs/RULE_COVERAGE.json`](docs/RULE_COVERAGE.json); AutoCite does not claim complete Bluebook compliance.
 
+When a finding is ambiguous or requires explanation, AutoCite can retrieve a small set of approved original Markdown summaries entirely locally. Every result identifies its chunk ID, source file, heading, license, and ranking provenance. Clean citations skip retrieval. See [`docs/LOCAL_RULE_RETRIEVAL.md`](docs/LOCAL_RULE_RETRIEVAL.md).
+
 ### `open_citecheck_workspace`
 
 MCP Apps-capable hosts can render a self-contained workspace with:
@@ -110,6 +112,7 @@ Generic state profiles identify the jurisdiction but set `verified_overrides=fal
 | `get_citation_graph` | Inspect authorities, occurrences, relationships, and resolutions. |
 | `resolve_short_form` | Resolve short forms or return bounded ambiguous candidates. |
 | `get_rule_coverage` | List tested partial and unsupported rule/source families. |
+| `get_rule_context` | Retrieve source-attributed approved local rule summaries. |
 | `fix_citations` | Apply high-confidence mechanical fixes only. |
 | `check_single_citation` | Review exactly one recognized citation. |
 | `convert_citation` | Convert a recognized citation using only present facts. |

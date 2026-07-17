@@ -48,6 +48,7 @@ async def test_mcp_exposes_expected_tools_resources_and_prompts() -> None:
         "get_citation_graph",
         "resolve_short_form",
         "get_rule_coverage",
+        "get_rule_context",
         "fix_citations",
         "check_single_citation",
         "convert_citation",

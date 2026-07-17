@@ -87,6 +87,27 @@ def test_builds_bounded_tasks_from_deterministic_inventory():
     assert tasks[0].citation_start == 600
 
 
+def test_qwen_prompt_contains_only_supplied_local_rule_chunks():
+    runtime = _load_runtime()
+    chunks = (
+        {
+            "chunk_id": "rule:abc",
+            "heading": "Id. antecedents",
+            "text": "Use only an unambiguous antecedent.",
+            "source_filename": "short_forms.md",
+        },
+    )
+    task = runtime.build_slm_tasks(
+        "See 42 USC §1983.",
+        "bluepages",
+        _deterministic(),
+        retrieved_rule_chunks=chunks,
+    )[0]
+    payload = json.loads(runtime.render_prompt(task))["task"]
+    assert payload["permitted_rule_chunk_ids"] == ["rule:abc"]
+    assert payload["retrieved_rule_chunks"] == list(chunks)
+
+
 def test_published_autocite_adapter_is_the_default_model():
     runtime = _load_runtime()
     assert runtime.DEFAULT_MODEL == "foolish-bandit/AutoCite-0.8B"
