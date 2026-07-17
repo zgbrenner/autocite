@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from .evals import run_gold_evaluation
+from .evaluation_framework import run_ablation_study, run_system_evaluation
 from .formatters import generate_citation
 from .setup_clients import install_claude_desktop
 from .slm_runtime import DEFAULT_MODEL
@@ -114,6 +115,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     evaluation = subparsers.add_parser("eval", help="Run deterministic AutoCite gold fixtures")
     evaluation.add_argument("--file", type=Path, default=Path("evals/gold.jsonl"))
+
+    system_evaluation = subparsers.add_parser(
+        "eval-system",
+        help="Run the document-level safety and quality evaluation",
+    )
+    system_evaluation.add_argument(
+        "--file",
+        type=Path,
+        default=Path("evals/system/documents.jsonl"),
+    )
+    system_evaluation.add_argument("--split", choices=("train", "dev", "test"), default="test")
+    system_evaluation.add_argument("--ablations", action="store_true")
 
     rule_index = subparsers.add_parser(
         "build-rule-index",
@@ -260,6 +273,14 @@ def main() -> None:
                 "local_only": True,
             }
         )
+        return
+    if args.command == "eval-system":
+        result = (
+            asyncio.run(run_ablation_study(args.file, split=args.split))
+            if args.ablations
+            else asyncio.run(run_system_evaluation(args.file, split=args.split))
+        )
+        _emit(result)
         return
     if args.command == "jurisdictions":
         _emit(list_jurisdiction_profiles())
