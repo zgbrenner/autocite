@@ -13,7 +13,7 @@ def _load_runtime():
     package = types.ModuleType("autocite_mcp")
     package.__path__ = [str(ROOT / "src" / "autocite_mcp")]
     sys.modules["autocite_mcp"] = package
-    for name in ("slm", "slm_runtime"):
+    for name in ("slm", "proposal_models", "rules", "slm_runtime"):
         path = ROOT / "src" / "autocite_mcp" / f"{name}.py"
         spec = importlib.util.spec_from_file_location(f"autocite_mcp.{name}", path)
         if spec is None or spec.loader is None:
@@ -41,6 +41,8 @@ def _deterministic():
                 "start": 4,
                 "end": 16,
                 "original": "42 USC §1983",
+                "suggestion": "42 U.S.C. § 1983",
+                "confidence": "high",
             }
         ],
     }
@@ -88,7 +90,7 @@ def test_builds_bounded_tasks_from_deterministic_inventory():
 def test_published_autocite_adapter_is_the_default_model():
     runtime = _load_runtime()
     assert runtime.DEFAULT_MODEL == "foolish-bandit/AutoCite-0.8B"
-    source = (ROOT / "src" / "autocite_mcp" / "slm_runtime.py").read_text(
+    source = (ROOT / "src" / "autocite_mcp" / "proposal_models.py").read_text(
         encoding="utf-8"
     )
     assert "enable_thinking=False" in source

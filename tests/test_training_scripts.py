@@ -19,6 +19,7 @@ def test_training_defaults_use_qwen_lora_trackio_and_hub_persistence():
     source = (ROOT / "training" / "train_sft.py").read_text(encoding="utf-8")
     assert "SFTTrainer" in source
     assert "LoraConfig" in source
+    assert "task_type=TaskType.CAUSAL_LM" in source
     assert "trainer.push_to_hub()" in source
     assert '"foolish-bandit/AutoCite-0.8B"' in source
 

@@ -71,6 +71,14 @@ async def test_review_document_is_primary_model_friendly_workflow():
     assert result["mechanical_review_complete"] is True
     assert result["completion_scope"] == "detected citation-format issues only"
     assert result["slm_review"]["status"] == "not_requested"
+    assert result["deterministic_edits"] == result["applied_edits"]
+    assert result["remaining_deterministic_issues"] == result["remaining_issues"]
+    assert result["model_proposals"] == []
+    assert result["retrieved_guidance"] == result["knowledge"]
+    assert result["source_verification_results"] == {
+        "case_verification": result["case_verification"],
+        "deep_review": result["deep_review_results"],
+    }
 
 
 @pytest.mark.asyncio

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import inspect
 import json
 from dataclasses import asdict, dataclass
@@ -12,9 +11,16 @@ from .slm import (
     apply_validated_proposals,
     validate_proposal,
 )
+from .proposal_models import (
+    DEFAULT_ADAPTER_ID,
+    LocalQwenProposalModel,
+    ModelRuntimeConfig,
+)
+from .rules import RULE_CATALOG
 
 
-DEFAULT_MODEL = "foolish-bandit/AutoCite-0.8B"
+DEFAULT_MODEL = DEFAULT_ADAPTER_ID
+KNOWN_PROPOSAL_CODES = set(RULE_CATALOG) | {"INSUFFICIENT_INFORMATION", "NO_CHANGE"}
 
 
 @dataclass(frozen=True)
@@ -49,61 +55,38 @@ class CallableSLMRuntime:
         return value
 
 
-class TransformersSLMRuntime:
-    """Lazy, optional Transformers adapter for Qwen3.5 text-only inference."""
+class TransformersSLMRuntime(LocalQwenProposalModel):
+    """Backward-compatible name for the local Qwen proposal model."""
 
     def __init__(
         self,
         model_path: str = DEFAULT_MODEL,
         *,
         max_new_tokens: int = 512,
+        base_model_id: str = "Qwen/Qwen3.5-0.8B",
+        local_model_directory: str | None = None,
+        device: str = "auto",
+        quantization: str = "none",
+        offline_only: bool = True,
+        max_context_length: int = 4096,
+        timeout_seconds: float = 60.0,
+        seed: int = 42,
     ) -> None:
-        self.model_path = model_path
-        self.max_new_tokens = max_new_tokens
-        self._model: Any = None
-        self._processor: Any = None
-
-    def _load(self) -> None:
-        if self._model is not None:
-            return
-        try:
-            from transformers import AutoModelForImageTextToText, AutoProcessor
-        except ImportError as exc:
-            raise RuntimeError(
-                "Local SLM inference requires the optional 'slm' dependencies"
-            ) from exc
-        self._processor = AutoProcessor.from_pretrained(self.model_path)
-        self._model = AutoModelForImageTextToText.from_pretrained(
-            self.model_path,
-            torch_dtype="auto",
-            device_map="auto",
+        super().__init__(
+            ModelRuntimeConfig(
+                enabled=True,
+                adapter_id=model_path,
+                base_model_id=base_model_id,
+                local_model_directory=local_model_directory,
+                device=device,
+                quantization=quantization,
+                offline_only=offline_only,
+                max_context_length=max_context_length,
+                max_generated_tokens=max_new_tokens,
+                timeout_seconds=timeout_seconds,
+                seed=seed,
+            )
         )
-
-    def _generate_sync(self, prompt: str) -> str:
-        self._load()
-        messages = [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
-        rendered = self._processor.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True,
-            enable_thinking=False,
-        )
-        inputs = self._processor(text=[rendered], return_tensors="pt")
-        device = next(self._model.parameters()).device
-        inputs = {key: value.to(device) for key, value in inputs.items()}
-        generated = self._model.generate(
-            **inputs,
-            max_new_tokens=self.max_new_tokens,
-            do_sample=False,
-        )
-        prompt_length = inputs["input_ids"].shape[1]
-        return self._processor.batch_decode(
-            generated[:, prompt_length:],
-            skip_special_tokens=True,
-        )[0].strip()
-
-    async def generate(self, prompt: str) -> str:
-        return await asyncio.to_thread(self._generate_sync, prompt)
 
 
 def build_slm_tasks(
@@ -143,33 +126,39 @@ def build_slm_tasks(
 
 
 def render_prompt(task: CitationTask) -> str:
-    payload = asdict(task)
-    schema = {
-        "citation_text": "exact citation span",
-        "start": "integer document offset",
-        "end": "integer document offset",
+    system_prompt = (
+        "You are AutoCite, a conservative U.S. legal citation reviewer. Return exactly "
+        "one JSON object. Do not invent parties, numbers, reporters, pincites, dates, URLs, "
+        "treatment, or source facts. Use null when required facts are missing. Never claim "
+        "good-law status, controlling weight, precedential value, or proposition support."
+    )
+    payload = {
+        "document": task.context,
+        "citation_text": task.citation_text,
+        "start": task.citation_start,
+        "end": task.citation_end,
         "source_type": task.source_type,
         "mode": task.mode,
-        "issue_code": "UPPER_SNAKE_CASE",
-        "explanation": "brief formatting explanation only",
-        "confidence": "low | medium | high",
-        "proposed_citation": "string or null",
-        "missing_facts": ["fact names"],
-        "facts_used": {"fact": "value already present"},
     }
-    return (
-        "You are AutoCite, a conservative U.S. legal citation reviewer. "
-        "Return exactly one JSON object and no markdown. Do not invent parties, numbers, "
-        "reporters, pincites, dates, URLs, treatment, or source facts. Use null for the "
-        "proposal when required facts are missing. Never claim good-law status, controlling "
-        "authority, or proposition support.\n\n"
-        f"TASK:\n{json.dumps(payload, ensure_ascii=False, sort_keys=True)}\n\n"
-        f"OUTPUT SCHEMA:\n{json.dumps(schema, ensure_ascii=False, sort_keys=True)}"
+    return json.dumps(
+        {"system_prompt": system_prompt, "task": payload},
+        ensure_ascii=False,
+        sort_keys=True,
     )
 
 
 def _proposal_dict(proposal: SLMProposal) -> dict[str, Any]:
     return asdict(proposal)
+
+
+def _matches_deterministic_suggestion(issue: Mapping[str, Any], proposal: SLMProposal) -> bool:
+    suggestion = issue.get("suggestion")
+    if not isinstance(suggestion, str) or proposal.proposed_citation is None:
+        return False
+    if suggestion == proposal.proposed_citation:
+        return True
+    trailing = str(issue.get("original", ""))[len(proposal.citation_text) :]
+    return bool(trailing) and suggestion == proposal.proposed_citation + trailing
 
 
 async def run_hybrid_review(
@@ -200,6 +189,7 @@ async def run_hybrid_review(
         }
 
     validations: list[ProposalValidation] = []
+    automatic_validations: list[ProposalValidation] = []
     rejected: list[dict[str, Any]] = []
     runtime_errors = 0
     for task in tasks:
@@ -234,8 +224,20 @@ async def run_hybrid_review(
             text,
             expected_mode=mode,
             expected_source_type=task.source_type,
+            expected_start=task.citation_start,
+            expected_end=task.citation_end,
+            known_issue_codes=KNOWN_PROPOSAL_CODES,
+            deterministic_issues=task.deterministic_issues,
         )
         validations.append(validation)
+        if validation.valid and any(
+            issue.get("code") == proposal.issue_code
+            and _matches_deterministic_suggestion(issue, proposal)
+            and issue.get("confidence") == "high"
+            and RULE_CATALOG.get(proposal.issue_code, {}).get("autofix") is True
+            for issue in task.deterministic_issues
+        ):
+            automatic_validations.append(validation)
         if not validation.valid:
             rejected.append(
                 {
@@ -245,7 +247,11 @@ async def run_hybrid_review(
             )
 
     valid = [result for result in validations if result.valid]
-    application = apply_validated_proposals(text, valid) if apply_slm_fixes else None
+    application = (
+        apply_validated_proposals(text, automatic_validations)
+        if apply_slm_fixes
+        else None
+    )
     corrected = application.text if application else text
     applied = list(application.applied) if application else []
     suggestions = [

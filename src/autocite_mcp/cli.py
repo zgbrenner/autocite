@@ -46,6 +46,15 @@ def _add_review_options(command: argparse.ArgumentParser) -> None:
     command.add_argument("--include-source-text", action="store_true")
     command.add_argument("--slm", action="store_true", help="Enable optional local SLM review")
     command.add_argument("--model-path", default=DEFAULT_MODEL)
+    command.add_argument("--base-model-id", default="Qwen/Qwen3.5-0.8B")
+    command.add_argument("--local-model-directory")
+    command.add_argument("--model-device", choices=("auto", "cpu", "cuda", "mps"), default="auto")
+    command.add_argument("--model-quantization", choices=("none", "4bit", "8bit"), default="none")
+    command.add_argument("--allow-model-download", action="store_true")
+    command.add_argument("--model-max-context-length", type=int, default=4096)
+    command.add_argument("--model-max-generated-tokens", type=int, default=512)
+    command.add_argument("--model-timeout-seconds", type=float, default=60.0)
+    command.add_argument("--model-seed", type=int, default=42)
     command.add_argument("--slm-only", action="store_true", help="Skip deterministic edits for evaluation")
     command.add_argument("--apply-slm-fixes", action="store_true")
 
@@ -127,6 +136,15 @@ def main() -> None:
                     include_source_text=args.include_source_text,
                     use_slm=args.slm or args.slm_only,
                     model_path=args.model_path,
+                    base_model_id=args.base_model_id,
+                    local_model_directory=args.local_model_directory,
+                    model_device=args.model_device,
+                    model_quantization=args.model_quantization,
+                    model_offline_only=not args.allow_model_download,
+                    model_max_context_length=args.model_max_context_length,
+                    model_max_generated_tokens=args.model_max_generated_tokens,
+                    model_timeout_seconds=args.model_timeout_seconds,
+                    model_seed=args.model_seed,
                     slm_only=args.slm_only,
                     apply_slm_fixes=args.apply_slm_fixes,
                 )
@@ -151,6 +169,15 @@ def main() -> None:
                     include_source_text=args.include_source_text,
                     use_slm=args.slm or args.slm_only,
                     model_path=args.model_path,
+                    base_model_id=args.base_model_id,
+                    local_model_directory=args.local_model_directory,
+                    model_device=args.model_device,
+                    model_quantization=args.model_quantization,
+                    model_offline_only=not args.allow_model_download,
+                    model_max_context_length=args.model_max_context_length,
+                    model_max_generated_tokens=args.model_max_generated_tokens,
+                    model_timeout_seconds=args.model_timeout_seconds,
+                    model_seed=args.model_seed,
                     slm_only=args.slm_only,
                     apply_slm_fixes=args.apply_slm_fixes,
                 )

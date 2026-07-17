@@ -38,6 +38,9 @@ slm = [
   "torchvision>=0.22,<1",
   "transformers>=4.57,<6",
 ]
+slm-quantized = [
+  "bitsandbytes>=0.46,<1",
+]
 dev = [
   "pytest>=8,<10",
   "pytest-asyncio>=0.24,<2",
@@ -63,3 +66,6 @@ exclude = [
 addopts = "-q"
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+  "real_model: opt-in smoke tests that load the full local model",
+]

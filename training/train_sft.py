@@ -49,7 +49,7 @@ def _load_records(path: Path) -> list[dict[str, Any]]:
 
 def main() -> None:
     from datasets import Dataset
-    from peft import LoraConfig
+    from peft import LoraConfig, TaskType
     from trl import SFTConfig, SFTTrainer
 
     defaults = training_defaults()
@@ -75,6 +75,7 @@ def main() -> None:
         train_dataset=Dataset.from_list(train_rows),
         eval_dataset=Dataset.from_list(eval_rows),
         peft_config=LoraConfig(
+            task_type=TaskType.CAUSAL_LM,
             r=defaults["lora_r"],
             lora_alpha=defaults["lora_alpha"],
             lora_dropout=defaults["lora_dropout"],

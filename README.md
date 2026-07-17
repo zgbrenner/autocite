@@ -135,13 +135,13 @@ uv sync --extra slm
 uv run autocite review "See 42 USC §1983." --slm
 ```
 
-SLM suggestions are not applied by default. To apply only high-confidence proposals that pass AutoCite's span and anti-fabrication checks:
+SLM suggestions are not applied by default. Even with the application flag, a proposal is eligible only when it exactly agrees with a high-confidence deterministic autofix:
 
 ```bash
 uv run autocite review "See 42 USC §1983." --slm --apply-slm-fixes
 ```
 
-The first SLM run downloads the configured model. Ordinary AutoCite review does not load or download model weights. See [`docs/SLM.md`](docs/SLM.md) for architecture, privacy, training, and evaluation details.
+Model loading is offline-only by default and never silently downloads weights during document review. Predownload both the base model and adapter, or explicitly pass `--allow-model-download` during a nonconfidential setup run. Ordinary AutoCite review does not import ML packages or load weights. See [`docs/SLM.md`](docs/SLM.md) for CPU, GPU, quantized, offline, privacy, and smoke-test instructions.
 
 Review a DOCX or text PDF:
 

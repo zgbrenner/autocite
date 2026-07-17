@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from typing import Any, Mapping, Sequence
+from typing import Any, Collection, Mapping, Sequence
 
 
 VALID_MODES = {"bluepages", "whitepages"}
@@ -53,6 +53,8 @@ _PROHIBITED_CLAIMS = (
     "good law",
     "controlling authority",
     "binding authority",
+    "precedential value",
+    "precedential weight",
     "supports the proposition",
     "proves the proposition",
     "has positive treatment",
@@ -68,7 +70,7 @@ def _require_string(payload: Mapping[str, Any], key: str) -> str:
 
 
 @dataclass(frozen=True)
-class SLMProposal:
+class CitationProposal:
     citation_text: str
     start: int
     end: int
@@ -80,9 +82,12 @@ class SLMProposal:
     proposed_citation: str | None
     missing_facts: tuple[str, ...]
     facts_used: dict[str, str]
+    antecedent_candidate: dict[str, str] | None
+    abstain: bool
+    retrieved_rule_chunk_ids: tuple[str, ...]
 
     @classmethod
-    def from_json(cls, raw: str) -> "SLMProposal":
+    def from_json(cls, raw: str) -> "CitationProposal":
         try:
             payload = json.loads(raw)
         except (TypeError, json.JSONDecodeError) as exc:
@@ -92,7 +97,7 @@ class SLMProposal:
         return cls.from_mapping(payload)
 
     @classmethod
-    def from_mapping(cls, payload: Mapping[str, Any]) -> "SLMProposal":
+    def from_mapping(cls, payload: Mapping[str, Any]) -> "CitationProposal":
         missing = sorted(_REQUIRED_FIELDS - set(payload))
         if missing:
             raise ValueError(f"SLM proposal is missing fields: {', '.join(missing)}")
@@ -136,6 +141,35 @@ class SLMProposal:
                 raise ValueError("facts_used values must be strings or numbers")
             normalized_facts[key] = str(value)
 
+        antecedent = payload.get("antecedent_candidate")
+        if antecedent is not None and not isinstance(antecedent, dict):
+            raise ValueError("antecedent_candidate must be an object or null")
+        normalized_antecedent: dict[str, str] | None = None
+        if isinstance(antecedent, dict):
+            normalized_antecedent = {}
+            for key, value in antecedent.items():
+                if not isinstance(key, str) or not key.strip():
+                    raise ValueError("antecedent_candidate keys must be non-empty strings")
+                if not isinstance(value, (str, int, float)) or isinstance(value, bool):
+                    raise ValueError(
+                        "antecedent_candidate values must be strings or numbers"
+                    )
+                normalized_antecedent[key] = str(value)
+
+        abstain = payload.get("abstain", proposed is None)
+        if not isinstance(abstain, bool):
+            raise ValueError("abstain must be a boolean")
+        if abstain != (proposed is None):
+            raise ValueError("abstain must be true exactly when proposed_citation is null")
+
+        chunk_ids = payload.get("retrieved_rule_chunk_ids", [])
+        if not isinstance(chunk_ids, list) or not all(
+            isinstance(item, str) and item.strip() for item in chunk_ids
+        ):
+            raise ValueError(
+                "retrieved_rule_chunk_ids must be a list of non-empty strings"
+            )
+
         return cls(
             citation_text=_require_string(payload, "citation_text"),
             start=start,
@@ -148,12 +182,19 @@ class SLMProposal:
             proposed_citation=proposed,
             missing_facts=tuple(item.strip() for item in missing_facts),
             facts_used=normalized_facts,
+            antecedent_candidate=normalized_antecedent,
+            abstain=abstain,
+            retrieved_rule_chunk_ids=tuple(item.strip() for item in chunk_ids),
         )
+
+
+# Backward-compatible public name used by the first adapter and early clients.
+SLMProposal = CitationProposal
 
 
 @dataclass(frozen=True)
 class ProposalValidation:
-    proposal: SLMProposal
+    proposal: CitationProposal
     valid: bool
     reasons: tuple[str, ...]
 
@@ -161,7 +202,7 @@ class ProposalValidation:
 @dataclass(frozen=True)
 class ProposalApplication:
     text: str
-    applied: tuple[SLMProposal, ...]
+    applied: tuple[CitationProposal, ...]
     skipped: tuple[ProposalValidation, ...]
 
 
@@ -175,19 +216,34 @@ def _material_tokens(value: str) -> set[str]:
 
 
 def validate_proposal(
-    proposal: SLMProposal,
+    proposal: CitationProposal,
     text: str,
     *,
     expected_mode: str,
     expected_source_type: str | None = None,
+    expected_start: int | None = None,
+    expected_end: int | None = None,
+    known_issue_codes: Collection[str] | None = None,
+    deterministic_issues: Sequence[Mapping[str, Any]] = (),
+    supported_rule_profiles: Collection[str] = VALID_MODES,
+    supplied_rule_chunk_ids: Collection[str] | None = None,
+    automatic_action_threshold: str = "high",
 ) -> ProposalValidation:
     reasons: list[str] = []
     if proposal.mode != expected_mode:
         reasons.append("mode_mismatch")
     if expected_source_type and proposal.source_type != expected_source_type:
         reasons.append("source_type_mismatch")
+    if proposal.mode not in supported_rule_profiles:
+        reasons.append("unsupported_rule_profile")
+    if known_issue_codes is not None and proposal.issue_code not in known_issue_codes:
+        reasons.append("unknown_issue_code")
     if proposal.end > len(text) or text[proposal.start : proposal.end] != proposal.citation_text:
         reasons.append("source_span_mismatch")
+    if expected_start is not None and proposal.start != expected_start:
+        reasons.append("task_offset_mismatch")
+    if expected_end is not None and proposal.end != expected_end:
+        reasons.append("task_offset_mismatch")
 
     explanation = proposal.explanation.casefold()
     if any(claim in explanation for claim in _PROHIBITED_CLAIMS):
@@ -198,6 +254,25 @@ def validate_proposal(
         proposed_tokens = _material_tokens(proposal.proposed_citation)
         if proposed_tokens - original_tokens:
             reasons.append("unsupported_material_facts")
+        if proposal.missing_facts:
+            reasons.append("missing_required_facts")
+
+    confidence_order = {"low": 0, "medium": 1, "high": 2}
+    if confidence_order[proposal.confidence] < confidence_order[automatic_action_threshold]:
+        reasons.append("below_auto_action_threshold")
+
+    deterministic_codes = {
+        str(issue.get("code", "")).strip().upper()
+        for issue in deterministic_issues
+        if issue.get("code")
+    }
+    if deterministic_codes and proposal.issue_code not in deterministic_codes:
+        reasons.append("deterministic_conflict")
+
+    if supplied_rule_chunk_ids is not None and not set(
+        proposal.retrieved_rule_chunk_ids
+    ).issubset(set(supplied_rule_chunk_ids)):
+        reasons.append("unattributed_rule_chunk")
 
     return ProposalValidation(proposal, not reasons, tuple(reasons))
 
