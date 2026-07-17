@@ -8,7 +8,7 @@ import time
 import tracemalloc
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from .tools import review_document
 
@@ -51,6 +51,9 @@ class EvaluationDocument:
     ambiguous_short_forms: int
     features: tuple[str, ...]
     safe_fixed_text: str | None = None
+    # Explicit gold labels for expected issue families, validated against
+    # known_issue_families(). None falls back to the legacy feature mapping.
+    expected_issue_families: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -92,6 +95,14 @@ def load_evaluation_corpus(path: Path) -> tuple[EvaluationDocument, ...]:
             split = str(payload["split"])
             if split not in {"train", "dev", "test"}:
                 raise ValueError(f"invalid split at line {line_number}")
+            expected_families = payload.get("expected_issue_families")
+            if expected_families is not None:
+                expected_families = tuple(str(item) for item in expected_families)
+                unknown = set(expected_families) - known_issue_families()
+                if unknown:
+                    raise ValueError(
+                        f"unknown issue families at line {line_number}: {sorted(unknown)}"
+                    )
             documents.append(
                 EvaluationDocument(
                     document_id,
@@ -104,6 +115,7 @@ def load_evaluation_corpus(path: Path) -> tuple[EvaluationDocument, ...]:
                     int(payload.get("ambiguous_short_forms", 0)),
                     tuple(str(item) for item in payload.get("features", [])),
                     payload.get("safe_fixed_text"),
+                    expected_families,
                 )
             )
     return tuple(documents)
@@ -147,11 +159,32 @@ def _material_tokens(value: str) -> set[str]:
     return set(re.findall(r"[a-z0-9]+", value.casefold().replace(".", "")))
 
 
-def _expected_issue_families(features: Iterable[str]) -> set[str]:
-    values = set(features)
+def known_issue_families() -> frozenset[str]:
+    """The engine's real issue-family taxonomy, derived from RULE_SPECS.
+
+    Gold labels are validated against this so the corpus can never drift from
+    the family names the engine actually emits (the pre-0.6 corpus expected a
+    'short forms' family that no rule ever produced, which alone cost the
+    issue-family metrics a third of their score on a 7-document test split).
+    """
+    from .deterministic_rules import RULE_SPECS
+
+    return frozenset(spec.rule_family_reference for spec in RULE_SPECS.values())
+
+
+def _expected_issue_families(document: EvaluationDocument) -> set[str]:
+    if document.expected_issue_families is not None:
+        return set(document.expected_issue_families)
+    # Legacy fallback for documents without explicit expected_issue_families:
+    # map descriptive features onto the engine's real family names.
+    values = set(document.features)
     families: set[str] = set()
-    if values & {"invalid Id.", "invalid supra note", "invalid short case", "ambiguous antecedent"}:
-        families.add("short forms")
+    if values & {"invalid Id.", "ambiguous antecedent"}:
+        families.add("short forms: Id.")
+    if "invalid short case" in values:
+        families.add("short forms: cases")
+    if values & {"invalid supra note", "supra"}:
+        families.add("supra and hereinafter")
     if "signal" in values:
         families.add("signals")
     if values & {"quotation", "missing pincite"}:
@@ -248,7 +281,7 @@ async def run_system_evaluation(
         ambiguous = sum(item["human_review_required"] for item in resolutions)
         detected_ambiguous += ambiguous
         correct_ambiguous += min(document.ambiguous_short_forms, ambiguous)
-        document_expected_families = _expected_issue_families(document.features)
+        document_expected_families = _expected_issue_families(document)
         for family in document_expected_families:
             expected_families.add((document.document_id, family))
         for finding in result["rule_findings"]:
