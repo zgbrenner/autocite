@@ -70,7 +70,13 @@ def validate_download_url(url: str) -> str:
     return url
 
 
-async def _validate_resolved_host(url: str) -> None:
+async def _resolve_pinned_url(url: str) -> tuple[str, str]:
+    """Resolve and validate the URL's host, returning an IP-pinned URL.
+
+    The request is made against the exact validated address (with SNI and Host
+    preserved), so a DNS-rebinding server cannot serve a public IP to the
+    validation lookup and a private one to the connection.
+    """
     parsed = urlparse(validate_download_url(url))
     host = parsed.hostname or ""
     port = parsed.port or 443
@@ -97,6 +103,9 @@ async def _validate_resolved_host(url: str) -> None:
                 "unsafe_download_url",
                 "Remote document hostname resolves to a private or reserved network.",
             )
+    pinned_ip = results[0][4][0]
+    pinned_netloc = f"[{pinned_ip}]:{port}" if ":" in pinned_ip else f"{pinned_ip}:{port}"
+    return parsed._replace(netloc=pinned_netloc).geturl(), host
 
 
 async def download_document_url(
@@ -105,12 +114,17 @@ async def download_document_url(
     timeout: float = 30.0,
     client_factory: type[httpx.AsyncClient] = httpx.AsyncClient,
 ) -> tuple[bytes, str | None]:
-    """Download an authorized file URL with redirect and size safeguards."""
+    """Download an authorized file URL with redirect, SSRF, and size safeguards."""
     current = validate_download_url(url)
     async with client_factory(timeout=timeout, follow_redirects=False) as client:
         for _ in range(MAX_DOWNLOAD_REDIRECTS + 1):
-            await _validate_resolved_host(current)
-            async with client.stream("GET", current, headers={"Accept": "*/*"}) as response:
+            pinned_url, host = await _resolve_pinned_url(current)
+            async with client.stream(
+                "GET",
+                pinned_url,
+                headers={"Accept": "*/*", "Host": host},
+                extensions={"sni_hostname": host},
+            ) as response:
                 if response.status_code in {301, 302, 303, 307, 308}:
                     location = response.headers.get("location")
                     if not location:
@@ -205,8 +219,13 @@ def load_document_bytes(data: bytes, filename: str, mime_type: str | None = None
             raise DocumentLoadError("invalid_docx", "The DOCX file could not be read.") from exc
         source_format = "docx"
     elif mime == "application/pdf" or suffix == ".pdf":
-        ir = parse_pdf_ir(data, filename=safe_name)
-        text = ir.to_text()
+        try:
+            ir = parse_pdf_ir(data, filename=safe_name)
+            text = ir.to_text()
+        except DocumentLoadError:
+            raise
+        except Exception as exc:
+            raise DocumentLoadError("invalid_pdf", "The PDF file could not be read.") from exc
         source_format = "pdf"
     else:
         raise DocumentLoadError(

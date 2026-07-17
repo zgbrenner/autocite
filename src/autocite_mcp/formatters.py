@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import re
 from collections.abc import Mapping
 from typing import Any, Callable
@@ -53,9 +54,9 @@ def _case(fields: Mapping[str, Any], mode: str, output_style: str) -> str:
         fields, ("case_name", "volume", "reporter", "first_page", "year")
     )
     case_name = values["case_name"]
-    if output_style == "markdown" and mode == "bluepages":
+    if output_style == "markdown":
         case_name = f"*{case_name}*"
-    elif output_style == "html" and mode == "bluepages":
+    elif output_style == "html":
         case_name = f"<i>{case_name}</i>"
 
     reporter = _normalize_reporter(values["reporter"])
@@ -111,9 +112,9 @@ def _journal(fields: Mapping[str, Any], _mode: str, _style: str) -> str:
 def _book(fields: Mapping[str, Any], mode: str, output_style: str) -> str:
     values = _required(fields, ("author", "title", "year"))
     title = values["title"]
-    if output_style == "markdown" and mode == "bluepages":
+    if output_style == "markdown":
         title = f"*{title}*"
-    elif output_style == "html" and mode == "bluepages":
+    elif output_style == "html":
         title = f"<i>{title}</i>"
     pincite = _optional(fields, "pincite")
     edition = _optional(fields, "edition")
@@ -210,7 +211,16 @@ def generate_citation(
     formatter = _FORMATTERS.get(normalized_type)
     if formatter is None:
         raise ValueError(f"Unsupported source_type: {source_type}")
-    return formatter(fields, normalized_mode, normalized_style)
+    prepared_fields: Mapping[str, Any] = fields
+    if normalized_style == "html":
+        # Every formatter interpolates caller-supplied field values directly
+        # into the result string (some inside <i>...</i> tags). Escape all
+        # string values up front so HTML output can never inject markup.
+        prepared_fields = {
+            key: html.escape(value) if isinstance(value, str) else value
+            for key, value in fields.items()
+        }
+    return formatter(prepared_fields, normalized_mode, normalized_style)
 
 
 def supported_source_types() -> list[str]:

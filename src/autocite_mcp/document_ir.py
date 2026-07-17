@@ -4,7 +4,9 @@ import io
 import re
 import statistics
 import zipfile
+from bisect import bisect_right
 from dataclasses import dataclass, field, replace
+from functools import cached_property
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 from xml.etree import ElementTree as ET
@@ -106,16 +108,41 @@ class DocumentIR:
     def blocks_of_kind(self, kind: str) -> list[DocumentBlock]:
         return [block for block in self.blocks if block.kind == kind]
 
+    @cached_property
+    def _block_segments(self) -> tuple[list[int], list[DocumentBlock | None]]:
+        """Precompute smallest-containing-block per text segment for O(log n) lookup.
+
+        block_at runs once per citation occurrence, so the naive full scan made
+        citation location O(citations x blocks) on large documents.
+        """
+        located = [block for block in self.blocks if block.kind in LOCATION_KINDS]
+        boundaries = sorted({b.absolute_start for b in located} | {b.absolute_end for b in located})
+        starts: dict[int, list[int]] = {}
+        ends: dict[int, list[int]] = {}
+        for index, block in enumerate(located):
+            starts.setdefault(block.absolute_start, []).append(index)
+            ends.setdefault(block.absolute_end, []).append(index)
+        active: set[int] = set()
+        winners: list[DocumentBlock | None] = []
+        for boundary in boundaries:
+            active.difference_update(ends.get(boundary, ()))
+            active.update(starts.get(boundary, ()))
+            if active:
+                winner = min(
+                    (located[i] for i in active),
+                    key=lambda item: (item.absolute_end - item.absolute_start, item.order),
+                )
+            else:
+                winner = None
+            winners.append(winner)
+        return boundaries, winners
+
     def block_at(self, offset: int) -> DocumentBlock | None:
-        candidates = [
-            block
-            for block in self.blocks
-            if block.kind in LOCATION_KINDS
-            and block.absolute_start <= offset < block.absolute_end
-        ]
-        if not candidates:
+        boundaries, winners = self._block_segments
+        index = bisect_right(boundaries, offset) - 1
+        if index < 0:
             return None
-        return min(candidates, key=lambda item: (item.absolute_end - item.absolute_start, item.order))
+        return winners[index]
 
     def with_citations(self, citations: Sequence[CitationOccurrence]) -> "DocumentIR":
         return replace(self, citations=tuple(citations))
@@ -378,10 +405,27 @@ def parse_markdown_ir(
     )
 
 
+# The 15 MB upload cap bounds only the compressed archive; cap what any single
+# XML part may decompress to so a crafted DOCX cannot balloon in memory.
+MAX_DOCX_XML_BYTES = 50 * 1024 * 1024
+
+
+def _read_docx_xml(archive: zipfile.ZipFile, path: str) -> ET.Element:
+    info = archive.getinfo(path)
+    if info.file_size > MAX_DOCX_XML_BYTES:
+        raise ValueError(f"DOCX part {path} exceeds the decompressed size limit")
+    data = archive.read(path)
+    # Well-formed DOCX parts never carry a DTD; entity declarations are the
+    # expansion ("billion laughs") vector for xml.etree's expat parser.
+    if b"<!DOCTYPE" in data or b"<!ENTITY" in data:
+        raise ValueError(f"DOCX part {path} contains a prohibited document type declaration")
+    return ET.fromstring(data)
+
+
 def _relationships(archive: zipfile.ZipFile, path: str) -> dict[str, str]:
     if path not in archive.namelist():
         return {}
-    root = ET.fromstring(archive.read(path))
+    root = _read_docx_xml(archive, path)
     return {
         str(node.attrib.get("Id")): str(node.attrib.get("Target"))
         for node in root.findall(f"{{{PKG_REL_NS}}}Relationship")
@@ -425,7 +469,7 @@ def _paragraph_content(node: ET.Element, note_numbers: Mapping[str, str]) -> tup
 def _core_metadata(archive: zipfile.ZipFile, filename: str) -> DocumentMetadata:
     if "docProps/core.xml" not in archive.namelist():
         return _metadata(filename, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
-    root = ET.fromstring(archive.read("docProps/core.xml"))
+    root = _read_docx_xml(archive, "docProps/core.xml")
     def value(namespace: str, name: str) -> str | None:
         return root.findtext(f"{{{namespace}}}{name}")
     return _metadata(
@@ -448,7 +492,7 @@ def parse_docx_ir(payload: bytes, *, filename: str = "document.docx") -> Documen
     ):
         if path not in archive.namelist():
             continue
-        root = ET.fromstring(archive.read(path))
+        root = _read_docx_xml(archive, path)
         visible = [
             node
             for node in root.findall(f"w:{element_name}", NS)
@@ -472,7 +516,7 @@ def parse_docx_ir(payload: bytes, *, filename: str = "document.docx") -> Documen
     footnote_numbers = {spec["note_id"]: spec["number"] for spec in note_specs if spec["kind"] == "footnote"}
     endnote_numbers = {spec["note_id"]: spec["number"] for spec in note_specs if spec["kind"] == "endnote"}
     relationships = _relationships(archive, "word/_rels/document.xml.rels")
-    root = ET.fromstring(archive.read("word/document.xml"))
+    root = _read_docx_xml(archive, "word/document.xml")
     body = root.find("w:body", NS)
     specs: list[dict[str, Any]] = []
     if body is not None:
@@ -725,7 +769,7 @@ def classify_document_mode(
         raise ValueError("document_type must be auto or a recognized court/practitioner/academic type")
     searchable = " ".join(filter(None, [ir.metadata.title, ir.metadata.subject, ir.text[:4000]]))
     if re.search(r"\b(?:district|supreme|superior|bankruptcy) court\b|\bplaintiff\b|\bdefendant\b|\bmotion\b", searchable, re.I):
-        blue_evidence.append("court_caption_or_filing_language")
+        blue_evidence.append("court_filing_language")
     if re.search(r"\blaw review\b|\bseminar paper\b|\bthis (?:article|note)\b|\bscholarly\b", searchable, re.I):
         white_evidence.append("academic_language")
     note_count = len(ir.blocks_of_kind("footnote")) + len(ir.blocks_of_kind("endnote"))
@@ -738,7 +782,14 @@ def classify_document_mode(
         blue_evidence.append("document_metadata_title")
     if ir.metadata.title and re.search(r"article|review|paper|note", ir.metadata.title, re.I):
         white_evidence.append("document_metadata_title")
-    auto_mode = "whitepages" if len(white_evidence) > len(blue_evidence) else "bluepages"
+    def _score(evidence: list[str]) -> int:
+        # An explicit document_type is a direct user assertion, so it outweighs
+        # any single textual signal inferred from document content.
+        return sum(2 if item.startswith("document_type:") else 1 for item in evidence)
+
+    blue_score = _score(blue_evidence)
+    white_score = _score(white_evidence)
+    auto_mode = "whitepages" if white_score > blue_score else "bluepages"
     auto_evidence = white_evidence if auto_mode == "whitepages" else blue_evidence
     conflicts = blue_evidence if auto_mode == "whitepages" else white_evidence
     if explicit != "auto":
@@ -750,8 +801,9 @@ def classify_document_mode(
     else:
         selected = auto_mode
         evidence = auto_evidence
-        margin = abs(len(blue_evidence) - len(white_evidence))
-        confidence = "high" if margin >= 2 and len(auto_evidence) >= 2 else "medium" if margin >= 1 else "low"
+        margin = abs(blue_score - white_score)
+        auto_score = white_score if auto_mode == "whitepages" else blue_score
+        confidence = "high" if margin >= 2 and auto_score >= 2 else "medium" if margin >= 1 else "low"
         confirmation = confidence == "low" or bool(conflicts and margin <= 1)
     return {
         "selected_mode": selected,

@@ -83,6 +83,31 @@ def test_coverage_matrix_discloses_partial_and_unsupported_families():
     assert {entry["status"] for entry in matrix.values()} >= {"partial", "unsupported"}
 
 
+def test_long_balanced_parenthetical_is_not_flagged_as_unbalanced():
+    long_body = (
+        "explaining that the holding rested on several independently "
+        "sufficient grounds each fully briefed and argued at length by "
+        "both parties over multiple rounds of supplemental briefing "
+        "ordered by the court"
+    )
+    assert len(long_body) > 180
+    text = (
+        "Jane Author, Useful Article, 12 Example L. Rev. 100 (2020) "
+        f"({long_body})."
+    )
+    findings = _findings(text, "whitepages")
+    assert not any(item.issue_code == "PARENTHETICAL_SYNTAX" for item in findings)
+
+
+def test_unbalanced_parenthetical_after_citation_is_still_flagged():
+    text = (
+        "Jane Author, Useful Article, 12 Example L. Rev. 100 "
+        "(explaining a point that never closes its parenthetical."
+    )
+    findings = _findings(text, "whitepages")
+    assert any(item.issue_code == "PARENTHETICAL_SYNTAX" for item in findings)
+
+
 def test_signals_and_nested_parentheticals_are_structurally_parsed():
     signals = parse_signals("Compare A with B; but cf. C; see generally D.")
     assert [item.normalized for item in signals] == [

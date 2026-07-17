@@ -101,6 +101,7 @@ For clients or gateways that can attach a fixed authorization header:
 ```bash
 AUTOCITE_TRANSPORT=streamable-http \
 AUTOCITE_HOST=0.0.0.0 \
+AUTOCITE_ALLOW_REMOTE=1 \
 AUTOCITE_API_TOKEN="LONG_RANDOM_SECRET" \
 autocite-mcp
 ```

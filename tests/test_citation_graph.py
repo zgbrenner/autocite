@@ -23,6 +23,30 @@ def test_valid_id_resolves_immediately_preceding_single_authority():
     assert result.human_review_required is False
 
 
+def test_chained_id_resolves_through_prior_resolved_id():
+    graph = _graph("Smith v. Jones, 410 U.S. 113 (1973). Id. at 115. Id. at 116.")
+    first, second = (
+        result for result in graph.resolutions if result.form == "id"
+    )
+    assert first.resolved_authority_id is not None
+    assert second.resolved_authority_id == first.resolved_authority_id
+    assert second.resolution_method == "immediately_preceding_single_authority"
+    assert second.human_review_required is False
+
+
+def test_chained_id_stays_unresolved_when_prior_id_is_ambiguous():
+    graph = _graph(
+        "See Smith v. Jones, 123 F.3d 456 (9th Cir. 2020); "
+        "Doe v. State, 456 F.3d 789 (9th Cir. 2021). Id. at 790. Id. at 791."
+    )
+    first, second = (
+        result for result in graph.resolutions if result.form == "id"
+    )
+    assert first.resolved_authority_id is None
+    assert second.resolved_authority_id is None
+    assert "no_immediately_preceding_authority" in second.disqualifying_facts
+
+
 def test_id_after_multi_authority_group_abstains():
     graph = _graph(
         "See Smith v. Jones, 123 F.3d 456 (9th Cir. 2020); "
@@ -52,6 +76,72 @@ def test_multiple_authorities_in_one_footnote_make_id_ambiguous():
     result = _resolution(build_citation_graph(ir, mode="whitepages"), "id")
     assert result.resolved_authority_id is None
     assert result.human_review_required is True
+
+
+def test_statutory_short_form_resolves_when_document_has_single_code():
+    graph = _graph(
+        "26 U.S.C. § 501 provides an exemption. Later, § 501 was construed narrowly."
+    )
+    result = _resolution(graph, "statutory_short")
+    assert result.resolved_authority_id is not None
+    assert result.resolution_method == "prior_full_statutory_authority"
+
+
+def test_statutory_short_form_stays_ambiguous_across_two_codes_same_section():
+    graph = _graph(
+        "26 U.S.C. § 501 provides an exemption. "
+        "12 C.F.R. § 501 covers something else. Later, § 501 was construed narrowly."
+    )
+    result = _resolution(graph, "statutory_short")
+    assert result.resolved_authority_id is None
+    assert "multiple_plausible_statutory_antecedents" in result.disqualifying_facts
+
+
+def test_statutory_short_form_code_hint_disambiguates_two_codes_same_section():
+    graph = _graph(
+        "26 U.S.C. § 501 provides an exemption. "
+        "12 C.F.R. § 501 covers something else. Later, U.S.C. § 501 was construed narrowly."
+    )
+    result = _resolution(graph, "statutory_short")
+    assert result.resolved_authority_id is not None
+    usc_authority = next(
+        authority for authority in graph.authorities if authority.components.get("code") == "U.S.C."
+    )
+    assert result.resolved_authority_id == usc_authority.authority_id
+
+
+def test_short_case_pincite_range_accepts_em_dash():
+    graph = _graph(
+        "Smith v. Jones, 123 F.3d 456 (9th Cir. 2020). Smith, 123 F.3d at 460—465."
+    )
+    matches = [item for item in graph.occurrences if item.form == "short_case"]
+    assert matches[0].components["pincite"] == "460—465"
+
+
+def test_supra_note_pincite_range_accepts_hyphen_and_em_dash():
+    hyphen = _graph(
+        "Jane Author, Useful Article, 12 Example L. Rev. 100 (2020). "
+        "Author, supra note 1, at 12-15."
+    )
+    hyphen_match = [item for item in hyphen.occurrences if item.form == "supra_note"][0]
+    assert hyphen_match.citation_text.endswith("at 12-15")
+
+    em_dash = _graph(
+        "Jane Author, Useful Article, 12 Example L. Rev. 100 (2020). "
+        "Author, supra note 1, at 12—15."
+    )
+    em_dash_match = [item for item in em_dash.occurrences if item.form == "supra_note"][0]
+    assert em_dash_match.citation_text.endswith("at 12—15")
+
+
+def test_supra_pincite_range_accepts_em_dash():
+    graph = _graph(
+        "Jane Author, Useful Article, 12 Example L. Rev. 100 (2020). "
+        "Author, supra, at 12—15.",
+        mode="whitepages",
+    )
+    supra_match = [item for item in graph.occurrences if item.form == "supra"][0]
+    assert supra_match.citation_text.endswith("at 12—15")
 
 
 def test_case_short_form_can_resolve_past_unrelated_citation():

@@ -47,6 +47,18 @@ Also configure TLS, request-size limits, rate limits, secret management, access-
 
 AutoCite does not provide legal advice and does not determine good-law status, controlling authority, legal proposition support, or positive/negative treatment. CourtListener citation counts are explicitly labeled as not a citator. A lawyer, editor, or qualified researcher must review substantive conclusions and controlling source rules.
 
+## MCP threat-model self-assessment
+
+A short self-assessment against the risk categories in the [OWASP MCP Security Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/MCP_Security_Cheat_Sheet.html), current as of this release:
+
+- **Arbitrary code / command execution.** No tool implementation invokes a shell or subprocess. DOCX, Markdown, and PDF parsing use in-process libraries (`python-docx`, `pypdf`), not external converters.
+- **Unbounded resource consumption.** Uploaded and downloaded documents are processed in memory and capped at 15 MB; remote downloads are also bounded by a fixed redirect limit.
+- **Excessive network egress and SSRF.** Ordinary formatting review makes no network call. AutoCite reaches CourtListener only when the caller explicitly enables `deep_review`, `verify_cases`, or a verification tool, and sends only extracted citation strings, not full documents. `review_uploaded_document` can also fetch a host-supplied `download_url`; that path is restricted to HTTPS, checks resolved addresses against private and reserved networks before every hop, and bounds redirects.
+- **Unauthenticated or overbroad access.** Hosted HTTP deployments bind to loopback by default. A non-loopback bind is refused unless both `AUTOCITE_ALLOW_REMOTE=1` and `AUTOCITE_API_TOKEN` are set, and `/mcp` requests are checked against that token with a constant-time comparison. This is bearer-token gating appropriate for private single-tenant use, not a substitute for OAuth-based per-user authorization in a multi-tenant deployment.
+- **Tool-output prompt injection.** Retrieved CourtListener opinion text is untrusted. AutoCite strips active HTML, bounds excerpt length, and returns retrieved text labeled as quoted evidence; the server's declared MCP instructions direct the host model to treat it as untrusted data rather than as instructions.
+
+This assessment covers AutoCite's own process boundary. It does not cover the connecting host, transport, reverse proxy, or any credential store outside AutoCite's control.
+
 ## Reporting vulnerabilities
 
 Do not include confidential documents, tokens, or privileged source text in a public issue. Report the smallest reproducible description possible and rotate any secret that may have been exposed.

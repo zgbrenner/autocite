@@ -19,6 +19,11 @@ def default_claude_config_path() -> Path:
     return Path.home() / ".config" / "Claude" / "claude_desktop_config.json"
 
 
+def _restrict_permissions(path: Path) -> None:
+    if os.name != "nt":
+        os.chmod(path, 0o600)
+
+
 def install_claude_desktop(
     *,
     config_path: Path | None = None,
@@ -35,6 +40,7 @@ def install_claude_desktop(
         payload = json.loads(raw) if raw else {}
         backup_path = path.with_suffix(path.suffix + ".bak")
         shutil.copy2(path, backup_path)
+        _restrict_permissions(backup_path)
     else:
         payload = {}
 
@@ -52,6 +58,8 @@ def install_claude_desktop(
         entry["env"] = {"COURTLISTENER_TOKEN": courtlistener_token}
     servers["autocite"] = entry
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    # The config may hold this and other servers' credentials in cleartext.
+    _restrict_permissions(path)
 
     return {
         "installed": True,

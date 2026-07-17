@@ -17,7 +17,8 @@ CASE_PATTERN = re.compile(
 )
 REPORTER_PATTERN = re.compile(
     r"\b(?P<volume>\d{1,4})\s+(?P<reporter>U\.?\s*S\.?|S\.?\s*Ct\.?|"
-    r"F\.?\s*(?:Supp\.?\s*(?:2d|3d)?|2d|3d)|L\.?\s*Ed\.?\s*(?:2d)?)\s+"
+    r"F\.?\s*(?:Supp\.?\s*(?:2d|3d)?|2d|3d)|F\.|"
+    r"L\.?\s*Ed\.?\s*(?:2d)?)\s+"
     r"(?P<page>\d{1,6})\b",
     re.IGNORECASE,
 )
@@ -35,7 +36,9 @@ CONSTITUTION_PATTERN = re.compile(
     r"\bU\.S\. Const\.\s+(?P<subdivision>(?:art\.|amend\.)\s+[IVXLCDM\d]+(?:,\s*§\s*\d+)?)",
     re.IGNORECASE,
 )
-SHORT_FORM_PATTERN = re.compile(r"\b(?P<form>id\.?|supra|hereinafter)\b", re.IGNORECASE)
+SHORT_FORM_PATTERN = re.compile(r"\b(?P<form>supra|hereinafter)\b", re.IGNORECASE)
+ID_PATTERN = re.compile(r"(?<!\w)(?P<form>id)\.?(?!\w)", re.IGNORECASE)
+ID_TOKEN_PATTERN = re.compile(r"id\.?", re.IGNORECASE)
 URL_PATTERN = re.compile(r"https?://[^\s<>\])}]+")
 JOURNAL_PATTERN = re.compile(
     r"\b(?P<volume>\d{1,3})\s+(?P<journal>[A-Z][A-Za-z.&'\- ]+L\.?\s*J\.?|"
@@ -43,11 +46,38 @@ JOURNAL_PATTERN = re.compile(
 )
 
 
+def _looks_like_id_citation(text: str, start: int, end: int) -> bool:
+    """Require "id."/"Id." to appear in an actual citation context.
+
+    The bare English word "id" (e.g. a form field) is never a citation short
+    form. Even with the literal trailing period, "id." only counts as a
+    citation short form when it is followed by a pincite (e.g. "id. at 5" or
+    "id., at 100"), begins a sentence/citation clause, or is preceded by a
+    citation signal (e.g. "See id.").
+    """
+    after = text[end : end + 40]
+    if re.match(r"\s*,?\s*at\s+\d", after, re.IGNORECASE):
+        return True
+    before = text[max(0, start - 60) : start]
+    if not before.strip():
+        return True
+    if re.search(r"[.!?][\"'”)\]]?\s*$", before):
+        return True
+    if re.search(
+        r"\b(?:see also|see generally|but see|but cf\.?|see|cf\.?|accord|compare|e\.g\.)\s*$",
+        before,
+        re.IGNORECASE,
+    ):
+        return True
+    return False
+
+
 def _canonical_reporter(reporter: str) -> str:
     key = re.sub(r"[.\s]", "", reporter).upper()
     return {
         "US": "U.S.",
         "SCT": "S. Ct.",
+        "F": "F.",
         "F2D": "F.2d",
         "F3D": "F.3d",
         "FSUPP": "F. Supp.",
@@ -100,12 +130,15 @@ class CitationEngine:
             ("constitution", CONSTITUTION_PATTERN),
             ("journal_article", JOURNAL_PATTERN),
             ("short_form", SHORT_FORM_PATTERN),
+            ("short_form", ID_PATTERN),
             ("internet", URL_PATTERN),
         ]
         for source_type, pattern in specs:
             for match in pattern.finditer(text):
                 start, end = match.span()
                 if overlaps((start, end), matches):
+                    continue
+                if pattern is ID_PATTERN and not _looks_like_id_citation(text, start, end):
                     continue
                 if source_type == "internet":
                     raw = match.group(0)
@@ -229,18 +262,26 @@ class CitationEngine:
                         )
                     )
 
-        for match in re.finditer(r"(?<!\w)id\.?(?!\w)", text, re.IGNORECASE):
-            if match.group(0) != "Id.":
-                issues.append(
-                    _issue(
-                        "SHORT_FORM_CAPITALIZATION",
-                        mode,
-                        *match.span(),
-                        match.group(0),
-                        suggestion="Id.",
-                        confidence="high",
-                    )
+        for citation in citations:
+            if citation.source_type != "short_form":
+                continue
+            form = citation.components.get("form", citation.text).lower().rstrip(".")
+            if form != "id":
+                continue
+            token = ID_TOKEN_PATTERN.match(citation.text)
+            if token is None or token.group(0) == "Id.":
+                continue
+            issues.append(
+                _issue(
+                    "SHORT_FORM_CAPITALIZATION",
+                    mode,
+                    citation.start + token.start(),
+                    citation.start + token.end(),
+                    token.group(0),
+                    suggestion="Id.",
+                    confidence="high",
                 )
+            )
 
         substantive = [
             item

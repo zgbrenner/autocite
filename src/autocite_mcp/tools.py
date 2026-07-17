@@ -8,7 +8,13 @@ from typing import Any
 
 from .deep_review import DeepReviewer
 from .citation_graph import build_citation_graph
-from .documents import build_review_docx, download_document_url, load_document_bytes
+from .documents import (
+    MAX_DOCUMENT_BYTES,
+    DocumentLoadError,
+    build_review_docx,
+    download_document_url,
+    load_document_bytes,
+)
 from .document_ir import (
     DocumentIR,
     classify_document_mode,
@@ -354,8 +360,15 @@ async def review_uploaded_document(
     filename = str(file.get("file_name") or file.get("filename") or "document.txt")
     mime_type = str(file.get("mime_type") or file.get("content_type") or "") or None
     if file.get("data_base64"):
+        encoded = str(file["data_base64"])
+        # Reject before decoding: base64 expands ~4/3, so this bounds peak memory.
+        if len(encoded) > (MAX_DOCUMENT_BYTES * 4) // 3 + 8:
+            raise DocumentLoadError(
+                "document_too_large",
+                f"Documents are limited to {MAX_DOCUMENT_BYTES // (1024 * 1024)} MB.",
+            )
         try:
-            payload = base64.b64decode(str(file["data_base64"]), validate=True)
+            payload = base64.b64decode(encoded, validate=True)
         except Exception as exc:
             raise ValueError("data_base64 must contain valid base64") from exc
     elif file.get("download_url"):
@@ -405,6 +418,31 @@ async def review_uploaded_document(
         "document_ir": loaded.ir.summary() if loaded.ir else None,
     }
     return result
+
+
+async def generate_certification_report(
+    text: str,
+    *,
+    document_type: str = "auto",
+    mode: str = "auto",
+    jurisdiction: str | None = None,
+    verify_cases: bool = False,
+    deep_review: bool = False,
+    prepared_for: str | None = None,
+) -> dict[str, Any]:
+    """Run a citation review and derive a truthful audit report from its results."""
+    from .certification import build_certification_report
+
+    review = await review_document(
+        text,
+        document_type=document_type,
+        mode=mode,
+        jurisdiction=jurisdiction,
+        apply_safe_fixes=False,
+        verify_cases=verify_cases,
+        deep_review=deep_review,
+    )
+    return build_certification_report(review, prepared_for=prepared_for)
 
 
 def export_review_docx(

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Protocol
@@ -9,6 +10,39 @@ from typing import Any, Callable, Protocol
 
 DEFAULT_ADAPTER_ID = "foolish-bandit/AutoCite-0.8B"
 DEFAULT_BASE_MODEL_ID = "Qwen/Qwen3.5-0.8B"
+
+
+def enforce_model_source_policy(
+    *,
+    model_path: str | None = None,
+    base_model_id: str | None = None,
+    offline_only: bool = True,
+) -> None:
+    """Reject non-default model sources supplied through the MCP tool surface.
+
+    Tool arguments are attacker-reachable in hosted deployments; loading an
+    arbitrary Hugging Face repository is a code-execution and egress primitive.
+    Operators who intentionally serve a custom model can opt out with
+    AUTOCITE_ALLOW_CUSTOM_MODELS=1. The CLI and desktop app call the review
+    functions directly and are not subject to this policy.
+    """
+    if os.getenv("AUTOCITE_ALLOW_CUSTOM_MODELS", "").strip().lower() in {"1", "true", "yes"}:
+        return
+    if base_model_id is not None and base_model_id != DEFAULT_BASE_MODEL_ID:
+        raise ValueError(
+            "base_model_id is restricted to the default AutoCite base model on this server. "
+            "The operator can permit custom models with AUTOCITE_ALLOW_CUSTOM_MODELS=1."
+        )
+    if model_path is not None and model_path != DEFAULT_ADAPTER_ID:
+        raise ValueError(
+            "model_path is restricted to the default AutoCite adapter on this server. "
+            "The operator can permit custom models with AUTOCITE_ALLOW_CUSTOM_MODELS=1."
+        )
+    if not offline_only:
+        raise ValueError(
+            "model_offline_only=false is not permitted through MCP tool calls. "
+            "Install models with the CLI, or set AUTOCITE_ALLOW_CUSTOM_MODELS=1 to allow downloads."
+        )
 
 
 class CitationProposalModel(Protocol):

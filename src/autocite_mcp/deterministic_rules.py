@@ -422,16 +422,28 @@ def _citation_context_findings(
                     suggestion="; ",
                 )
             )
+    parentheticals = parse_parentheticals(ir.text)
     for occurrence in graph.occurrences:
         suffix = ir.text[occurrence.end : occurrence.end + 180]
-        if suffix.lstrip().startswith("(") and suffix.count("(") > suffix.count(")"):
+        stripped = suffix.lstrip()
+        if not stripped.startswith("("):
+            continue
+        paren_start = occurrence.end + (len(suffix) - len(stripped))
+        # Use the real stack-based parenthetical parse (which is not bounded
+        # to a fixed window) to decide whether the parenthetical is actually
+        # balanced, rather than counting "(" / ")" within a truncated slice
+        # (which false-positives on long-but-balanced parentheticals).
+        parenthetical = next(
+            (item for item in parentheticals if item.start == paren_start), None
+        )
+        if parenthetical is not None and not parenthetical.balanced:
             findings.append(
                 _finding(
                     "PARENTHETICAL_SYNTAX",
                     mode,
                     occurrence.end,
-                    min(len(ir.text), occurrence.end + 180),
-                    suffix[:180],
+                    parenthetical.end,
+                    ir.text[occurrence.end : parenthetical.end],
                     "The citation-adjacent parenthetical appears unbalanced.",
                 )
             )

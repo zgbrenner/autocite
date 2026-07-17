@@ -12,6 +12,7 @@ from starlette.responses import JSONResponse
 from . import __version__
 from .formatters import generate_citation as _generate_citation
 from .knowledge import CORE_RULES, get_knowledge_pack
+from .proposal_models import enforce_model_source_policy
 from .rules import RULE_CATALOG, validate_mode
 from .slm_runtime import DEFAULT_MODEL
 from .tools import (
@@ -20,6 +21,7 @@ from .tools import (
     convert_citation as _convert_citation,
     explain_issue as _explain_issue,
     export_review_docx as _export_review_docx,
+    generate_certification_report as _generate_certification_report,
     get_citation_guidance as _get_citation_guidance,
     get_citation_graph as _get_citation_graph,
     get_rule_coverage as _get_rule_coverage,
@@ -126,6 +128,11 @@ async def review_document(
     primary-authority retrieval, quotation comparison, page-marker checks, and candidate
     supporting passages. Deep review never determines legal support or good-law status.
     """
+    enforce_model_source_policy(
+        model_path=model_path,
+        base_model_id=base_model_id,
+        offline_only=model_offline_only,
+    )
     return await _review_document(
         text,
         document_type=document_type,
@@ -190,6 +197,11 @@ async def review_uploaded_document(
     The file object must contain data_base64 or an authorized download_url, plus optional
     file_name and mime_type. Scanned PDFs return an OCR-required error rather than partial text.
     """
+    enforce_model_source_policy(
+        model_path=model_path,
+        base_model_id=base_model_id,
+        offline_only=model_offline_only,
+    )
     return await _review_uploaded_document(
         file,
         document_type=document_type,
@@ -230,6 +242,35 @@ def export_review_docx(
         corrected_text,
         tracked=tracked,
         filename=filename,
+    )
+
+
+@mcp.tool(title="Generate a citation review audit report", annotations=_NETWORK_READ)
+async def generate_certification_report(
+    text: str,
+    document_type: str = "auto",
+    mode: str = "auto",
+    jurisdiction: str | None = None,
+    verify_cases: bool = False,
+    deep_review: bool = False,
+    prepared_for: str | None = None,
+) -> dict[str, Any]:
+    """Produce a court- and reviewer-facing audit trail for a document's citations.
+
+    The report truthfully separates checks that ran (deterministic format review;
+    optional CourtListener matching when verify_cases or deep_review is set, which
+    sends extracted citations over the network) from checks that did not, and never
+    asserts good-law status or proposition support. Use it when a filing requires a
+    record of automated citation review.
+    """
+    return await _generate_certification_report(
+        text,
+        document_type=document_type,
+        mode=mode,
+        jurisdiction=jurisdiction,
+        verify_cases=verify_cases,
+        deep_review=deep_review,
+        prepared_for=prepared_for,
     )
 
 
