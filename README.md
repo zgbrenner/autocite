@@ -209,6 +209,8 @@ Local profiles, offline installation, model verification, health diagnostics, an
 
 Install the optional local desktop shell with `uv tool install 'autocite-mcp[desktop]'`, then run `autocite-desktop`. See [`docs/DESKTOP.md`](docs/DESKTOP.md) for supported workflow and disclosed UI limitations.
 
+Compatible assistants can use the routing skills and local stdio examples under `skills/` and `host-integrations/`. See [`docs/SKILL_INTEGRATIONS.md`](docs/SKILL_INTEGRATIONS.md).
+
 Optional loopback HTTP mode:
 
 ```bash

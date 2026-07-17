@@ -1,0 +1,4 @@
+[mcp_servers.autocite]
+command = "autocite-mcp"
+args = []
+env = { AUTOCITE_TRANSPORT = "stdio" }

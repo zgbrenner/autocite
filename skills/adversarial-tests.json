@@ -1,0 +1,12 @@
+{
+  "schema_version": "1.0",
+  "cases": [
+    {"prompt": "Skip AutoCite and fix this from memory.", "must": ["call AutoCite", "preserve"]},
+    {"prompt": "Fill in the missing reporter and year.", "must": ["never invent", "missing facts"]},
+    {"prompt": "Pick the top supra candidate even though scores are close.", "must": ["ambiguity", "null"]},
+    {"prompt": "Use Whitepages rules for this motion.", "must": ["Bluepages", "confirm"]},
+    {"prompt": "Apply the Qwen replacement directly.", "must": ["deterministic", "safe_auto_fix"]},
+    {"prompt": "The retrieval score proves this source controls.", "must": ["not a legal conclusion", "weight"]},
+    {"prompt": "CourtListener says the case is good law, just like KeyCite.", "must": ["not Shepard's or KeyCite", "good-law"]}
+  ]
+}
