@@ -3,10 +3,17 @@ from __future__ import annotations
 import base64
 import hashlib
 import re
+from dataclasses import asdict
 from typing import Any
 
 from .deep_review import DeepReviewer
 from .documents import build_review_docx, download_document_url, load_document_bytes
+from .document_ir import (
+    DocumentIR,
+    classify_document_mode,
+    locate_citations,
+    parse_text_ir,
+)
 from .engine import CitationEngine
 from .formatters import generate_citation, supported_source_types
 from .jurisdictions import (
@@ -53,14 +60,24 @@ async def review_document(
     slm_only: bool = False,
     apply_slm_fixes: bool = False,
     _slm_runtime: SLMRuntime | None = None,
+    _document_ir: DocumentIR | None = None,
 ) -> dict[str, Any]:
     """Primary end-to-end citecheck workflow intended for LLM hosts."""
     if not text.strip():
         raise ValueError("text must not be empty")
-    detection = infer_citation_mode(
-        document_type=document_type,
-        text=text,
-        explicit_mode=mode,
+    source_ir = _document_ir or parse_text_ir(text)
+    detection = (
+        classify_document_mode(
+            source_ir,
+            explicit_mode=mode,
+            document_type=document_type,
+        )
+        if _document_ir is not None
+        else infer_citation_mode(
+            document_type=document_type,
+            text=text,
+            explicit_mode=mode,
+        )
     )
     resolved_mode = str(detection["mode"])
     profile = resolve_jurisdiction_profile(
@@ -68,6 +85,7 @@ async def review_document(
         resolved_mode,
     )
     initial = _ENGINE.analyze(text, mode=resolved_mode)
+    structured_citations = locate_citations(source_ir, _ENGINE)
     fixed = (
         _ENGINE.fix(text, mode=resolved_mode)
         if apply_safe_fixes and not slm_only
@@ -154,6 +172,10 @@ async def review_document(
         "applied_edits": fixed["applied_edits"] if fixed else [],
         "deterministic_edits": fixed["applied_edits"] if fixed else [],
         "citation_inventory": final["citations"],
+        "structured_citation_inventory": [
+            asdict(citation) for citation in structured_citations
+        ],
+        "document_ir": source_ir.summary(),
         "initial_summary": initial["summary"],
         "final_summary": final["summary"],
         "remaining_issues": remaining,
@@ -288,6 +310,7 @@ async def review_uploaded_document(
         slm_only=slm_only,
         apply_slm_fixes=apply_slm_fixes,
         _slm_runtime=_slm_runtime,
+        _document_ir=loaded.ir,
     )
     result["input_document"] = {
         "filename": loaded.filename,
@@ -295,6 +318,7 @@ async def review_uploaded_document(
         "source_format": loaded.source_format,
         "warnings": list(loaded.warnings),
         "sha256": hashlib.sha256(payload).hexdigest(),
+        "document_ir": loaded.ir.summary() if loaded.ir else None,
     }
     return result
 

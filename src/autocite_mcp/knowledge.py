@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from collections.abc import Iterable
 from typing import Any
 
@@ -185,42 +184,17 @@ SOURCE_GUIDANCE: dict[str, dict[str, Any]] = {
 
 def infer_citation_mode(*, document_type: str = "auto", text: str = "", explicit_mode: str = "auto") -> dict[str, Any]:
     """Infer Bluepages or Whitepages mode with an explainable confidence signal."""
-    normalized_mode = explicit_mode.strip().lower().replace("-", "_")
-    if normalized_mode != "auto":
-        mode = validate_mode(normalized_mode)
-        return {"mode": mode, "confidence": "high", "reason": "explicit_mode", "signals": ["explicit_mode"]}
+    from .document_ir import classify_document_mode, parse_text_ir
 
     normalized_type = document_type.strip().lower().replace("-", "_").replace(" ", "_")
-    if normalized_type in DOCUMENT_TYPE_MODES:
-        return {
-            "mode": DOCUMENT_TYPE_MODES[normalized_type],
-            "confidence": "high",
-            "reason": f"document_type:{normalized_type}",
-            "signals": [f"document_type:{normalized_type}"],
-        }
-    if normalized_type not in {"", "auto", "unknown", "unspecified"}:
-        raise ValueError("document_type must be auto or a recognized court/practitioner/academic type")
-
-    lower = text.lower()
-    blue_patterns = [
-        r"\bin the (?:united states|superior|district|circuit|supreme) court\b",
-        r"\bcase no\.?\b",
-        r"\b(?:plaintiff|defendant|petitioner|respondent|appellant|appellee)\b",
-        r"\b(?:motion to|memorandum of points and authorities|complaint|answer)\b",
-    ]
-    white_patterns = [
-        r"\blaw review\b",
-        r"\b(?:student note|student comment|seminar paper)\b",
-        r"\bsupra note\b",
-        r"\bthis article (?:argues|examines|contends)\b",
-    ]
-    blue_score = sum(bool(re.search(pattern, lower)) for pattern in blue_patterns)
-    white_score = sum(bool(re.search(pattern, lower)) for pattern in white_patterns)
-    if blue_score > white_score and blue_score:
-        return {"mode": "bluepages", "confidence": "medium" if blue_score == 1 else "high", "reason": "court_filing_language", "signals": ["court_filing_language"]}
-    if white_score > blue_score and white_score:
-        return {"mode": "whitepages", "confidence": "medium" if white_score == 1 else "high", "reason": "academic_writing_language", "signals": ["academic_writing_language"]}
-    return {"mode": "bluepages", "confidence": "low", "reason": "default_practitioner_mode", "signals": ["no_decisive_document_signal"]}
+    if normalized_type in {"", "unknown", "unspecified"}:
+        normalized_type = "auto"
+    ir = parse_text_ir(text)
+    return classify_document_mode(
+        ir,
+        explicit_mode=explicit_mode,
+        document_type=normalized_type,
+    )
 
 
 def _normalize_source_types(source_types: Iterable[str] | None) -> list[str]:

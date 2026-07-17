@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
 from pathlib import Path
+from typing import TYPE_CHECKING
 from urllib.parse import urljoin, urlparse
 
 import httpx
@@ -16,6 +17,9 @@ from docx import Document
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from pypdf import PdfReader
+
+if TYPE_CHECKING:
+    from .document_ir import DocumentIR
 
 MAX_DOCUMENT_BYTES = 15 * 1024 * 1024
 MIN_PDF_TEXT_CHARS = 20
@@ -35,6 +39,7 @@ class DocumentInput:
     mime_type: str
     source_format: str
     warnings: tuple[str, ...] = ()
+    ir: DocumentIR | None = None
 
 
 def validate_download_url(url: str) -> str:
@@ -176,6 +181,7 @@ def load_document_bytes(data: bytes, filename: str, mime_type: str | None = None
     safe_name = Path(filename or "document.txt").name
     mime = _normalized_mime(safe_name, mime_type)
     suffix = Path(safe_name).suffix.lower()
+    from .document_ir import parse_docx_ir, parse_markdown_ir, parse_pdf_ir, parse_text_ir
 
     if mime in {"text/plain", "text/markdown"} or suffix in {".txt", ".md", ".markdown"}:
         try:
@@ -183,17 +189,24 @@ def load_document_bytes(data: bytes, filename: str, mime_type: str | None = None
         except UnicodeDecodeError as exc:
             raise DocumentLoadError("invalid_text_encoding", "Text documents must use UTF-8.") from exc
         source_format = "markdown" if suffix in {".md", ".markdown"} or mime == "text/markdown" else "text"
+        ir = (
+            parse_markdown_ir(text, filename=safe_name, mime_type=mime)
+            if source_format == "markdown"
+            else parse_text_ir(text, filename=safe_name, mime_type=mime)
+        )
     elif (
         mime == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         or suffix == ".docx"
     ):
         try:
-            text = _docx_text(data)
+            ir = parse_docx_ir(data, filename=safe_name)
+            text = ir.to_text()
         except Exception as exc:
             raise DocumentLoadError("invalid_docx", "The DOCX file could not be read.") from exc
         source_format = "docx"
     elif mime == "application/pdf" or suffix == ".pdf":
-        text = _pdf_text(data)
+        ir = parse_pdf_ir(data, filename=safe_name)
+        text = ir.to_text()
         source_format = "pdf"
     else:
         raise DocumentLoadError(
@@ -208,9 +221,9 @@ def load_document_bytes(data: bytes, filename: str, mime_type: str | None = None
         filename=safe_name,
         mime_type=mime,
         source_format=source_format,
-        warnings=(
-            "Input formatting is normalized to text for citation analysis; layout may not be preserved in exports.",
-        ),
+        warnings=tuple(ir.warnings)
+        + ("Input formatting is normalized to text for citation analysis; layout may not be preserved in exports.",),
+        ir=ir,
     )
 
 
