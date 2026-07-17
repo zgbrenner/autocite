@@ -21,11 +21,13 @@ from .tools import (
     explain_issue as _explain_issue,
     export_review_docx as _export_review_docx,
     get_citation_guidance as _get_citation_guidance,
+    get_citation_graph as _get_citation_graph,
     get_jurisdiction_profile as _get_jurisdiction_profile,
     list_capabilities as _list_capabilities,
     list_jurisdiction_profiles as _list_jurisdiction_profiles,
     review_document as _review_document,
     review_uploaded_document as _review_uploaded_document,
+    resolve_short_form as _resolve_short_form,
     verify_case_citations as _verify_case_citations,
 )
 from .workspace import WORKSPACE_HTML, workspace_payload
@@ -271,6 +273,18 @@ def check_citations(
 ) -> dict[str, Any]:
     """Advanced: audit legal writing in an explicitly selected citation mode."""
     return _check_citations(text, mode=mode, apply_safe_fixes=apply_safe_fixes)
+
+
+@mcp.tool(title="Get the document citation graph", annotations=_READ_ONLY)
+def get_citation_graph(text: str, mode: str = "bluepages") -> dict[str, Any]:
+    """Return conservative authority identities, occurrences, edges, and resolutions."""
+    return _get_citation_graph(text, mode=mode)
+
+
+@mcp.tool(title="Resolve citation short forms", annotations=_READ_ONLY)
+def resolve_short_form(text: str, mode: str = "bluepages") -> dict[str, Any]:
+    """Resolve short forms or return all plausible antecedents and an abstention."""
+    return _resolve_short_form(text, mode=mode)
 
 
 @mcp.tool(title="Apply safe citation fixes", annotations=_READ_ONLY)

@@ -7,6 +7,7 @@ from dataclasses import asdict
 from typing import Any
 
 from .deep_review import DeepReviewer
+from .citation_graph import build_citation_graph
 from .documents import build_review_docx, download_document_url, load_document_bytes
 from .document_ir import (
     DocumentIR,
@@ -86,6 +87,7 @@ async def review_document(
     )
     initial = _ENGINE.analyze(text, mode=resolved_mode)
     structured_citations = locate_citations(source_ir, _ENGINE)
+    citation_graph = build_citation_graph(source_ir, mode=resolved_mode)
     fixed = (
         _ENGINE.fix(text, mode=resolved_mode)
         if apply_safe_fixes and not slm_only
@@ -176,6 +178,7 @@ async def review_document(
             asdict(citation) for citation in structured_citations
         ],
         "document_ir": source_ir.summary(),
+        "citation_graph": citation_graph.as_dict(),
         "initial_summary": initial["summary"],
         "final_summary": final["summary"],
         "remaining_issues": remaining,
@@ -387,6 +390,32 @@ def check_citations(
     if apply_safe_fixes:
         return _ENGINE.fix(text, mode=mode)
     return _ENGINE.analyze(text, mode=mode)
+
+
+def get_citation_graph(
+    text: str,
+    *,
+    mode: str = "bluepages",
+) -> dict[str, Any]:
+    """Build document-wide authority and short-form resolution state."""
+    if not text.strip():
+        raise ValueError("text must not be empty")
+    normalized_mode = validate_mode(mode)
+    return build_citation_graph(parse_text_ir(text), mode=normalized_mode).as_dict()
+
+
+def resolve_short_form(
+    text: str,
+    *,
+    mode: str = "bluepages",
+) -> dict[str, Any]:
+    """Return every short-form resolution without silently choosing ambiguity."""
+    graph = get_citation_graph(text, mode=mode)
+    return {
+        "schema_version": graph["version"],
+        "mode": graph["mode"],
+        "resolutions": graph["resolutions"],
+    }
 
 
 def check_single_citation(
