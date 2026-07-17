@@ -56,6 +56,8 @@ Uploaded documents are parsed into a structure-preserving `DocumentIR`. DOCX foo
 
 Each review also builds a document-wide citation graph. It keeps conservative authority identities, every citation occurrence, structural relationships, and explicit short-form resolutions. Ambiguous `Id.`, short-case, `supra`, `supra note`, statutory short forms, and `hereinafter` uses return candidates and a review warning instead of a guessed antecedent. See [`docs/CITATION_GRAPH.md`](docs/CITATION_GRAPH.md).
 
+Contextual findings come from declared deterministic rule families and carry one of four correction levels. Only `safe_auto_fix` findings can be applied without approval. Exact supported, partial, and unsupported coverage is published in [`docs/RULE_COVERAGE.json`](docs/RULE_COVERAGE.json); AutoCite does not claim complete Bluebook compliance.
+
 ### `open_citecheck_workspace`
 
 MCP Apps-capable hosts can render a self-contained workspace with:
@@ -107,6 +109,7 @@ Generic state profiles identify the jurisdiction but set `verified_overrides=fal
 | `check_citations` | Audit a document and return structured issues. |
 | `get_citation_graph` | Inspect authorities, occurrences, relationships, and resolutions. |
 | `resolve_short_form` | Resolve short forms or return bounded ambiguous candidates. |
+| `get_rule_coverage` | List tested partial and unsupported rule/source families. |
 | `fix_citations` | Apply high-confidence mechanical fixes only. |
 | `check_single_citation` | Review exactly one recognized citation. |
 | `convert_citation` | Convert a recognized citation using only present facts. |

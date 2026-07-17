@@ -80,6 +80,11 @@ def _issue(
         original=original,
         suggestion=suggestion,
         confidence=confidence,
+        correction_level=(
+            "safe_auto_fix"
+            if metadata.get("autofix") and suggestion is not None and confidence == "high"
+            else "review_required"
+        ),
     )
 
 
@@ -153,7 +158,9 @@ class CitationEngine:
         candidates = [
             issue
             for issue in report["issues"]
-            if issue["suggestion"] is not None and issue["confidence"] == "high"
+            if issue["suggestion"] is not None
+            and issue["confidence"] == "high"
+            and issue["correction_level"] == "safe_auto_fix"
         ]
         candidates.sort(key=lambda item: (item["start"], item["end"]), reverse=True)
         fixed = text
