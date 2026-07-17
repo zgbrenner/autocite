@@ -52,6 +52,8 @@ Set `deep_review=true` to retrieve matched case authority from CourtListener and
 
 Use this for TXT, Markdown, DOCX, and text-based PDF. Scanned or image-only PDFs return `ocr_required` rather than silently producing incomplete text. Files are processed in memory and limited to 15 MB.
 
+Uploaded documents are parsed into a structure-preserving `DocumentIR`. DOCX footnotes and endnotes remain separate from body text, Markdown note identifiers are retained, and text PDFs keep page and coordinate evidence where available. Every original citation is returned with a stable block, note, or page location in `structured_citation_inventory`. See [`docs/DOCUMENT_IR.md`](docs/DOCUMENT_IR.md).
+
 ### `open_citecheck_workspace`
 
 MCP Apps-capable hosts can render a self-contained workspace with:
