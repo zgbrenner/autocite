@@ -80,6 +80,10 @@ exclude = [
 [tool.pytest.ini_options]
 addopts = "-q --strict-markers"
 testpaths = ["tests"]
+# tests/test_training_*.py import the top-level training package, which is only
+# importable when the repository root is on sys.path (uv run pytest does not
+# insert the working directory the way python -m pytest does).
+pythonpath = ["."]
 asyncio_mode = "auto"
 markers = [
   "real_model: opt-in smoke tests that load the full local model",
