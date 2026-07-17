@@ -3,6 +3,33 @@ from __future__ import annotations
 from autocite_mcp.server import mcp
 
 
+def test_review_tools_expose_optional_slm_parameters() -> None:
+    import inspect
+
+    from autocite_mcp.server import review_document, review_uploaded_document
+
+    review_parameters = inspect.signature(review_document).parameters
+    upload_parameters = inspect.signature(review_uploaded_document).parameters
+    for name in (
+        "use_slm",
+        "use_local_model",
+        "model_path",
+        "base_model_id",
+        "local_model_directory",
+        "model_device",
+        "model_quantization",
+        "model_offline_only",
+        "model_max_context_length",
+        "model_max_generated_tokens",
+        "model_timeout_seconds",
+        "model_seed",
+        "slm_only",
+        "apply_slm_fixes",
+    ):
+        assert name in review_parameters
+        assert name in upload_parameters
+
+
 async def test_mcp_exposes_expected_tools_resources_and_prompts() -> None:
     tools = await mcp.list_tools()
     resources = await mcp.list_resources()

@@ -1,5 +1,7 @@
 import pytest
 
+from autocite_mcp.slm_runtime import CallableSLMRuntime
+
 from autocite_mcp.tools import (
     check_citations,
     check_single_citation,
@@ -68,6 +70,60 @@ async def test_review_document_is_primary_model_friendly_workflow():
     assert result["response_contract"][0].startswith("Use corrected_text")
     assert result["mechanical_review_complete"] is True
     assert result["completion_scope"] == "detected citation-format issues only"
+    assert result["slm_review"]["status"] == "not_requested"
+    assert result["deterministic_edits"] == result["applied_edits"]
+    assert result["remaining_deterministic_issues"] == result["remaining_issues"]
+    assert result["model_proposals"] == []
+    assert result["retrieved_guidance"] == result["knowledge"]
+    assert result["source_verification_results"] == {
+        "case_verification": result["case_verification"],
+        "deep_review": result["deep_review_results"],
+    }
+
+
+@pytest.mark.asyncio
+async def test_review_document_slm_failure_preserves_deterministic_result():
+    from autocite_mcp.tools import review_document
+
+    result = await review_document(
+        "See 42 USC §1983.",
+        use_slm=True,
+        _slm_runtime=CallableSLMRuntime(lambda prompt: "not json"),
+    )
+    assert result["corrected_text"] == "See 42 U.S.C. § 1983."
+    assert result["slm_review"]["status"] == "fallback"
+
+
+@pytest.mark.asyncio
+async def test_review_document_can_apply_validated_slm_fix_when_explicitly_enabled():
+    import json
+
+    from autocite_mcp.tools import review_document
+
+    response = json.dumps(
+        {
+            "citation_text": "42 USC §1983",
+            "start": 4,
+            "end": 16,
+            "source_type": "statute",
+            "mode": "bluepages",
+            "issue_code": "STATUTE_CODE_ABBREVIATION",
+            "explanation": "Normalize abbreviation and spacing.",
+            "confidence": "high",
+            "proposed_citation": "42 U.S.C. § 1983",
+            "missing_facts": [],
+            "facts_used": {"title": "42", "section": "1983"},
+        }
+    )
+    result = await review_document(
+        "See 42 USC §1983.",
+        apply_safe_fixes=False,
+        use_slm=True,
+        apply_slm_fixes=True,
+        _slm_runtime=CallableSLMRuntime(lambda prompt: response),
+    )
+    assert result["corrected_text"] == "See 42 U.S.C. § 1983."
+    assert result["slm_review"]["applied_count"] == 1
 
 
 def test_get_citation_guidance_for_single_source():

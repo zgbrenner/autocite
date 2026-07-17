@@ -5,6 +5,8 @@ AutoCite turns Claude or ChatGPT into a safer legal-citation specialist for:
 - **Bluepages** — briefs, motions, pleadings, court filings, and practitioner memoranda.
 - **Whitepages** — law reviews, student notes, seminar papers, and academic legal research.
 
+AutoCite 0.4 also includes an optional local SLM layer using [`foolish-bandit/AutoCite-0.8B`](https://huggingface.co/foolish-bandit/AutoCite-0.8B), a citation-specialized LoRA adapter based on `Qwen/Qwen3.5-0.8B`. The model can classify ambiguous citation issues and propose structured repairs, but deterministic validation remains in control of every automatic edit.
+
 The normal workflow remains simple: connect AutoCite, provide text or a document, and ask the model to fix the citations. AutoCite detects the appropriate mode, applies deterministic fixes, supplies citation-rule knowledge, and—when explicitly requested—retrieves case authority to compare quotations, page markers, and candidate supporting passages.
 
 ## Install in three minutes
@@ -125,6 +127,21 @@ Review text:
 ```bash
 uv run autocite review "See 42 USC §1983."
 ```
+
+Enable optional local SLM suggestions:
+
+```bash
+uv sync --extra slm
+uv run autocite review "See 42 USC §1983." --slm
+```
+
+SLM suggestions are not applied by default. Even with the application flag, a proposal is eligible only when it exactly agrees with a high-confidence deterministic autofix:
+
+```bash
+uv run autocite review "See 42 USC §1983." --slm --apply-slm-fixes
+```
+
+Model loading is offline-only by default and never silently downloads weights during document review. Predownload both the base model and adapter, or explicitly pass `--allow-model-download` during a nonconfidential setup run. Ordinary AutoCite review does not import ML packages or load weights. See [`docs/SLM.md`](docs/SLM.md) for CPU, GPU, quantized, offline, privacy, and smoke-test instructions.
 
 Review a DOCX or text PDF:
 

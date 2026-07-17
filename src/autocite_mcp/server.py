@@ -13,6 +13,7 @@ from . import __version__
 from .formatters import generate_citation as _generate_citation
 from .knowledge import CORE_RULES, get_knowledge_pack
 from .rules import RULE_CATALOG, validate_mode
+from .slm_runtime import DEFAULT_MODEL
 from .tools import (
     check_citations as _check_citations,
     check_single_citation as _check_single_citation,
@@ -91,6 +92,20 @@ async def review_document(
     verify_cases: bool = False,
     deep_review: bool = False,
     include_source_text: bool = False,
+    use_slm: bool = False,
+    use_local_model: bool | None = None,
+    model_path: str = DEFAULT_MODEL,
+    base_model_id: str = "Qwen/Qwen3.5-0.8B",
+    local_model_directory: str | None = None,
+    model_device: str = "auto",
+    model_quantization: str = "none",
+    model_offline_only: bool = True,
+    model_max_context_length: int = 4096,
+    model_max_generated_tokens: int = 512,
+    model_timeout_seconds: float = 60.0,
+    model_seed: int = 42,
+    slm_only: bool = False,
+    apply_slm_fixes: bool = False,
 ) -> dict[str, Any]:
     """Start here for citation review in legal writing.
 
@@ -108,6 +123,20 @@ async def review_document(
         verify_cases=verify_cases,
         deep_review=deep_review,
         include_source_text=include_source_text,
+        use_slm=use_slm,
+        use_local_model=use_local_model,
+        model_path=model_path,
+        base_model_id=base_model_id,
+        local_model_directory=local_model_directory,
+        model_device=model_device,
+        model_quantization=model_quantization,
+        model_offline_only=model_offline_only,
+        model_max_context_length=model_max_context_length,
+        model_max_generated_tokens=model_max_generated_tokens,
+        model_timeout_seconds=model_timeout_seconds,
+        model_seed=model_seed,
+        slm_only=slm_only,
+        apply_slm_fixes=apply_slm_fixes,
     )
 
 
@@ -124,6 +153,20 @@ async def review_uploaded_document(
     apply_safe_fixes: bool = True,
     deep_review: bool = False,
     include_source_text: bool = False,
+    use_slm: bool = False,
+    use_local_model: bool | None = None,
+    model_path: str = DEFAULT_MODEL,
+    base_model_id: str = "Qwen/Qwen3.5-0.8B",
+    local_model_directory: str | None = None,
+    model_device: str = "auto",
+    model_quantization: str = "none",
+    model_offline_only: bool = True,
+    model_max_context_length: int = 4096,
+    model_max_generated_tokens: int = 512,
+    model_timeout_seconds: float = 60.0,
+    model_seed: int = 42,
+    slm_only: bool = False,
+    apply_slm_fixes: bool = False,
 ) -> dict[str, Any]:
     """Review TXT, Markdown, DOCX, or text-based PDF from an authorized file reference.
 
@@ -138,6 +181,20 @@ async def review_uploaded_document(
         apply_safe_fixes=apply_safe_fixes,
         deep_review=deep_review,
         include_source_text=include_source_text,
+        use_slm=use_slm,
+        use_local_model=use_local_model,
+        model_path=model_path,
+        base_model_id=base_model_id,
+        local_model_directory=local_model_directory,
+        model_device=model_device,
+        model_quantization=model_quantization,
+        model_offline_only=model_offline_only,
+        model_max_context_length=model_max_context_length,
+        model_max_generated_tokens=model_max_generated_tokens,
+        model_timeout_seconds=model_timeout_seconds,
+        model_seed=model_seed,
+        slm_only=slm_only,
+        apply_slm_fixes=apply_slm_fixes,
     )
 
 

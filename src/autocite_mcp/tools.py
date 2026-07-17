@@ -16,6 +16,12 @@ from .jurisdictions import (
 )
 from .knowledge import get_knowledge_pack, infer_citation_mode
 from .rules import RULE_CATALOG, rule_reference, validate_mode
+from .slm_runtime import (
+    DEFAULT_MODEL,
+    SLMRuntime,
+    TransformersSLMRuntime,
+    run_hybrid_review,
+)
 from .verifiers import CourtListenerVerifier
 
 _ENGINE = CitationEngine()
@@ -32,6 +38,21 @@ async def review_document(
     verify_cases: bool = False,
     deep_review: bool = False,
     include_source_text: bool = False,
+    use_slm: bool = False,
+    use_local_model: bool | None = None,
+    model_path: str = DEFAULT_MODEL,
+    base_model_id: str = "Qwen/Qwen3.5-0.8B",
+    local_model_directory: str | None = None,
+    model_device: str = "auto",
+    model_quantization: str = "none",
+    model_offline_only: bool = True,
+    model_max_context_length: int = 4096,
+    model_max_generated_tokens: int = 512,
+    model_timeout_seconds: float = 60.0,
+    model_seed: int = 42,
+    slm_only: bool = False,
+    apply_slm_fixes: bool = False,
+    _slm_runtime: SLMRuntime | None = None,
 ) -> dict[str, Any]:
     """Primary end-to-end citecheck workflow intended for LLM hosts."""
     if not text.strip():
@@ -47,9 +68,48 @@ async def review_document(
         resolved_mode,
     )
     initial = _ENGINE.analyze(text, mode=resolved_mode)
-    fixed = _ENGINE.fix(text, mode=resolved_mode) if apply_safe_fixes else None
+    fixed = (
+        _ENGINE.fix(text, mode=resolved_mode)
+        if apply_safe_fixes and not slm_only
+        else None
+    )
     corrected_text = fixed["fixed_text"] if fixed else text
     final = _ENGINE.analyze(corrected_text, mode=resolved_mode)
+    model_requested = use_slm if use_local_model is None else use_local_model
+    if model_requested or slm_only:
+        runtime = _slm_runtime or TransformersSLMRuntime(
+            model_path,
+            base_model_id=base_model_id,
+            local_model_directory=local_model_directory,
+            device=model_device,
+            quantization=model_quantization,
+            offline_only=model_offline_only,
+            max_context_length=model_max_context_length,
+            max_new_tokens=model_max_generated_tokens,
+            timeout_seconds=model_timeout_seconds,
+            seed=model_seed,
+        )
+        slm_review = await run_hybrid_review(
+            corrected_text,
+            mode=resolved_mode,
+            deterministic_result=final,
+            runtime=runtime,
+            apply_slm_fixes=apply_slm_fixes,
+        )
+        if slm_review["corrected_text"] != corrected_text:
+            corrected_text = str(slm_review["corrected_text"])
+            final = _ENGINE.analyze(corrected_text, mode=resolved_mode)
+    else:
+        slm_review = {
+            "status": "not_requested",
+            "model": model_path,
+            "corrected_text": corrected_text,
+            "suggestions": [],
+            "rejected": [],
+            "applied": [],
+            "applied_count": 0,
+            "fallback_reason": None,
+        }
     source_types = list(final["summary"]["by_source_type"])
 
     if verify_cases:
@@ -92,15 +152,32 @@ async def review_document(
         "original_text": text,
         "corrected_text": corrected_text,
         "applied_edits": fixed["applied_edits"] if fixed else [],
+        "deterministic_edits": fixed["applied_edits"] if fixed else [],
         "citation_inventory": final["citations"],
         "initial_summary": initial["summary"],
         "final_summary": final["summary"],
         "remaining_issues": remaining,
+        "remaining_deterministic_issues": remaining,
         "mechanical_review_complete": len(remaining) == 0,
         "completion_scope": "detected citation-format issues only",
         "knowledge": knowledge,
         "case_verification": verification,
         "deep_review_results": deep_results,
+        "slm_review": slm_review,
+        "model_proposals": (
+            {
+                "accepted": slm_review["suggestions"],
+                "rejected": slm_review["rejected"],
+                "deterministically_applied": slm_review["applied"],
+            }
+            if slm_review["status"] != "not_requested"
+            else []
+        ),
+        "retrieved_guidance": knowledge,
+        "source_verification_results": {
+            "case_verification": verification,
+            "deep_review": deep_results,
+        },
         "confidence_legend": {
             "deterministic": (
                 "A code path produced this formatting or exact-comparison result."
@@ -153,6 +230,21 @@ async def review_uploaded_document(
     apply_safe_fixes: bool = True,
     deep_review: bool = False,
     include_source_text: bool = False,
+    use_slm: bool = False,
+    use_local_model: bool | None = None,
+    model_path: str = DEFAULT_MODEL,
+    base_model_id: str = "Qwen/Qwen3.5-0.8B",
+    local_model_directory: str | None = None,
+    model_device: str = "auto",
+    model_quantization: str = "none",
+    model_offline_only: bool = True,
+    model_max_context_length: int = 4096,
+    model_max_generated_tokens: int = 512,
+    model_timeout_seconds: float = 60.0,
+    model_seed: int = 42,
+    slm_only: bool = False,
+    apply_slm_fixes: bool = False,
+    _slm_runtime: SLMRuntime | None = None,
 ) -> dict[str, Any]:
     """Review an authorized MCP file reference or a base64 document payload."""
     filename = str(file.get("file_name") or file.get("filename") or "document.txt")
@@ -181,6 +273,21 @@ async def review_uploaded_document(
         apply_safe_fixes=apply_safe_fixes,
         deep_review=deep_review,
         include_source_text=include_source_text,
+        use_slm=use_slm,
+        use_local_model=use_local_model,
+        model_path=model_path,
+        base_model_id=base_model_id,
+        local_model_directory=local_model_directory,
+        model_device=model_device,
+        model_quantization=model_quantization,
+        model_offline_only=model_offline_only,
+        model_max_context_length=model_max_context_length,
+        model_max_generated_tokens=model_max_generated_tokens,
+        model_timeout_seconds=model_timeout_seconds,
+        model_seed=model_seed,
+        slm_only=slm_only,
+        apply_slm_fixes=apply_slm_fixes,
+        _slm_runtime=_slm_runtime,
     )
     result["input_document"] = {
         "filename": loaded.filename,
@@ -398,6 +505,20 @@ def list_capabilities() -> dict[str, Any]:
     return {
         "primary_workflow": "review_document",
         "automatic_mode_detection": True,
+        "local_slm": {
+            "available": True,
+            "optional": True,
+            "default_model": DEFAULT_MODEL,
+            "default_behavior": "disabled",
+            "applies_edits_only_when": "explicitly enabled and safety-validated",
+            "fallback": "deterministic citation review",
+            "never_claims": [
+                "good-law status",
+                "controlling authority",
+                "legal proposition support",
+                "verified missing citation facts",
+            ],
+        },
         "deep_review": {
             "available": True,
             "provider": "CourtListener",
