@@ -159,6 +159,20 @@ def _material_tokens(value: str) -> set[str]:
     return set(re.findall(r"[a-z0-9]+", value.casefold().replace(".", "")))
 
 
+def _introduces_material_content(original: str, suggestion: str) -> bool:
+    """True when a suggestion adds content beyond formatting of the original.
+
+    Abbreviation and spacing fixes ("42 USC" -> "42 U.S.C.", "F.Supp.3d" ->
+    "F. Supp. 3d") change tokenization in both directions, so no single token
+    scheme survives both: an edit that preserves the concatenated alphanumeric
+    content is pure formatting; only otherwise do new material tokens count.
+    """
+    collapse = re.compile(r"[^a-z0-9]+")
+    if collapse.sub("", suggestion.casefold()) == collapse.sub("", original.casefold()):
+        return False
+    return bool(_material_tokens(suggestion) - _material_tokens(original))
+
+
 def known_issue_families() -> frozenset[str]:
     """The engine's real issue-family taxonomy, derived from RULE_SPECS.
 
@@ -293,7 +307,7 @@ async def run_system_evaluation(
         for edit in result["applied_edits"]:
             if edit["correction_level"] != "safe_auto_fix":
                 unsafe_edits += 1
-            if _material_tokens(str(edit["suggestion"])) - _material_tokens(str(edit["original"])):
+            if _introduces_material_content(str(edit["original"]), str(edit["suggestion"])):
                 unsupported_facts += 1
             if not any(edit["start"] < end and start < edit["end"] for start, end in citation_ranges):
                 noncitation_changes += 1
