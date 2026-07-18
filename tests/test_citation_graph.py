@@ -190,6 +190,37 @@ def test_supra_note_resolves_one_source_and_abstains_for_multiple_sources():
     assert many_result.human_review_required is True
 
 
+def test_supra_note_resolves_through_plain_text_ir_markdown_footnote():
+    # review_document (not editable from tests) always parses documents with
+    # parse_text_ir, never parse_markdown_ir, so this exact end-to-end path
+    # -- markdown-style "[^1]:" footnotes fed through parse_text_ir -- is
+    # what production actually exercises. A single permitted authority in
+    # the referenced footnote must resolve.
+    one = _graph(
+        "Claim.[^1]\nLater, Author, supra note 1.\n\n"
+        "[^1]: Jane Author, First Article, 12 Example L. Rev. 100 (2020).",
+        mode="whitepages",
+    )
+    one_result = _resolution(one, "supra_note")
+    assert one_result.resolved_authority_id is not None
+    assert one_result.resolution_method == "single_permitted_authority_in_referenced_note"
+    assert one_result.human_review_required is False
+
+    # A footnote with two authorities must stay ambiguous rather than
+    # silently picking one -- this is what corpus doc dev-supra-note-01
+    # encodes (ambiguous_short_forms == 1).
+    many = _graph(
+        "Claim.[^1]\nLater, Author, supra note 1.\n\n"
+        "[^1]: Jane Author, First Article, 12 Example L. Rev. 100 (2020); "
+        "John Writer, Second Article, 13 Example L. Rev. 200 (2021).",
+        mode="whitepages",
+    )
+    many_result = _resolution(many, "supra_note")
+    assert many_result.resolved_authority_id is None
+    assert "referenced_note_has_multiple_authorities" in many_result.disqualifying_facts
+    assert many_result.human_review_required is True
+
+
 def test_distant_repeated_source_resolves_only_from_prior_occurrences():
     ir = parse_markdown_ir(
         "First.[^1]\n\nMiddle.[^2]\n\nDisputed, Author, supra note 1.\n\n"

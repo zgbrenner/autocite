@@ -11,6 +11,44 @@ def test_extracts_multiple_legal_source_types():
     assert {"case", "statute", "regulation", "short_form"}.issubset(kinds)
 
 
+def test_regulation_citation_with_letter_embedded_subsection_is_not_truncated():
+    # eyecite's law-citation matcher stops at the digit-letter boundary in
+    # "240.10b-5" and returns a truncated FullLawCitation ("17 C.F.R. §
+    # 240"); its span then blocks the engine's fallback regex from ever
+    # running over that region, so the truncation used to leak through to
+    # extract().
+    text = "The rule appears at 17 C.F.R. § 240.10b-5."
+    citations = CitationEngine().extract(text)
+    regulation = next(item for item in citations if item.source_type == "regulation")
+    assert regulation.text == "17 C.F.R. § 240.10b-5"
+    assert regulation.components["section"] == "240.10b-5"
+    # The sentence-ending period must not be absorbed into the citation.
+    assert text[regulation.end] == "."
+
+
+def test_statute_citation_with_letter_embedded_subsection_is_not_truncated():
+    text = "The rule appears at 29 U.S.C. § 216.10b-5."
+    citations = CitationEngine().extract(text)
+    statute = next(item for item in citations if item.source_type == "statute")
+    assert statute.text == "29 U.S.C. § 216.10b-5"
+    assert statute.components["section"] == "216.10b-5"
+    assert text[statute.end] == "."
+
+
+def test_malformed_regulation_citation_fixes_to_full_subsection_text():
+    # Mirrors evals/system/documents.jsonl train-reg-01: the malformed
+    # "17 CFR §240.10b-5" must both normalize its abbreviation *and* keep
+    # the full subsection once re-extracted from the corrected text.
+    text = "The rule appears at 17 CFR §240.10b-5."
+    result = CitationEngine().fix(text, mode="bluepages")
+    assert result["fixed_text"] == "The rule appears at 17 C.F.R. § 240.10b-5."
+    report = CitationEngine().analyze(result["fixed_text"], mode="bluepages")
+    regulation = next(
+        item for item in report["citations"] if item["source_type"] == "regulation"
+    )
+    assert regulation["text"] == "17 C.F.R. § 240.10b-5"
+
+
 def test_fixes_safe_mechanical_errors_without_inventing_facts():
     text = "See 576 US 644 and 42 USC §1983. id."
     result = CitationEngine().fix(text, mode="bluepages")
