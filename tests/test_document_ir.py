@@ -80,6 +80,24 @@ def test_plain_text_preserves_explicit_numbered_footnote_syntax():
     assert ir.to_text() == text
 
 
+def test_plain_text_ir_sets_note_number_for_markdown_footnote_definitions():
+    # review_document always parses through parse_text_ir (never
+    # parse_markdown_ir), so markdown-style "[^1]:" footnote definitions must
+    # get a note_number here too, or supra-note resolution (which matches on
+    # location.note_number) can never succeed for these documents.
+    text = (
+        "Claim.[^1]\nLater, Author, supra note 1.\n\n"
+        "[^1]: Jane Author, First Article, 12 Example L. Rev. 100 (2020)."
+    )
+    ir = parse_text_ir(text)
+    notes = ir.blocks_of_kind("footnote")
+    assert len(notes) == 1
+    assert notes[0].note_id == "1"
+    assert notes[0].note_number == "1"
+    assert notes[0].text.startswith("Jane Author")
+    assert ir.to_text() == text
+
+
 def test_markdown_preserves_headings_links_block_quotes_and_explicit_notes():
     markdown = """# Seminar Paper
 

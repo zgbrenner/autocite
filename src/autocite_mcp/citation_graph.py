@@ -465,8 +465,17 @@ def build_citation_graph(ir: DocumentIR, *, mode: str = "bluepages") -> Citation
                     disqualifying.append("intervening_citation_clause")
                 if len([item for item in group if item.authority_id]) > 1:
                     disqualifying.append("preceding_citation_group_has_multiple_authorities")
-                if re.search(r"[A-Za-z]{3,}", gap):
-                    disqualifying.append("intervening_non_citation_material")
+                # Indigo R15.3 bars Id. only after a multi-source citation, not
+                # after ordinary prose: "Baxter v. Cole, ... (2015). The court
+                # explained its reasoning. Id. at 905." is textbook-correct
+                # usage. Prose still disqualifies when it names another
+                # authority ("v.", a reporter volume, a section symbol) or when
+                # the gap crosses a paragraph boundary, where the antecedent is
+                # no longer reliably the immediately preceding citation.
+                if re.search(r"\bv\.\s|\b\d{1,4}\s+[A-Z]|§|\bsupra\b|\bId\.\B", gap):
+                    disqualifying.append("intervening_authority_reference")
+                if "\n\n" in gap:
+                    disqualifying.append("intervening_paragraph_break")
                 if prior_authority_id is None:
                     disqualifying.append("no_immediately_preceding_authority")
                 if not disqualifying and prior_authority_id:

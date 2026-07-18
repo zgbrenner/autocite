@@ -82,9 +82,30 @@ def _case_match(text: str, citation: FullCaseCitation, resource_id: str | None) 
     return CitationMatch("case", text[start:end], start, end, components)
 
 
+# eyecite's law-citation matcher builds the "section" group from a run of
+# digits (optionally dotted, e.g. "1604.11") but stops as soon as it meets a
+# digit immediately fused to a letter, e.g. the "10b" in "240.10b-5" or the
+# "78j" in "78j(b)". When that happens it still returns a FullLawCitation --
+# just truncated at the last fully-digit segment -- so the truncated span
+# claims the region and the engine's own fallback regex (which would have
+# captured the whole thing) never runs there, because CitationEngine.extract
+# skips any fallback match that overlaps an already-claimed span.
+#
+# This pattern only fires directly after the digits eyecite already matched,
+# and only extends when the character right after the dot is itself a digit.
+# A sentence-ending period is always followed by whitespace/end-of-string,
+# never by a digit, so it can never be absorbed by this extension.
+_LAW_SECTION_CONTINUATION = re.compile(r"\.\d[\w]*(?:-[\w]+)*")
+
+
 def _law_match(text: str, citation: FullLawCitation, resource_id: str | None) -> CitationMatch:
     start, end = citation.full_span()
     groups = citation.groups
+    section = groups.get("section")
+    continuation = _LAW_SECTION_CONTINUATION.match(text, end)
+    if continuation:
+        end = continuation.end()
+        section = (section or "") + continuation.group(0)
     reporter = _text(groups.get("reporter")) or ""
     compact_reporter = re.sub(r"[.\s]", "", reporter).upper()
     source_type = "regulation" if compact_reporter == "CFR" else "statute"
@@ -93,7 +114,7 @@ def _law_match(text: str, citation: FullLawCitation, resource_id: str | None) ->
         title=title,
         code=reporter,
         chapter=groups.get("chapter"),
-        section=groups.get("section"),
+        section=section,
         publisher=_metadata(citation, "publisher"),
         year=_metadata(citation, "year"),
         resolved_to=resource_id,

@@ -190,6 +190,37 @@ def test_supra_note_resolves_one_source_and_abstains_for_multiple_sources():
     assert many_result.human_review_required is True
 
 
+def test_supra_note_resolves_through_plain_text_ir_markdown_footnote():
+    # review_document (not editable from tests) always parses documents with
+    # parse_text_ir, never parse_markdown_ir, so this exact end-to-end path
+    # -- markdown-style "[^1]:" footnotes fed through parse_text_ir -- is
+    # what production actually exercises. A single permitted authority in
+    # the referenced footnote must resolve.
+    one = _graph(
+        "Claim.[^1]\nLater, Author, supra note 1.\n\n"
+        "[^1]: Jane Author, First Article, 12 Example L. Rev. 100 (2020).",
+        mode="whitepages",
+    )
+    one_result = _resolution(one, "supra_note")
+    assert one_result.resolved_authority_id is not None
+    assert one_result.resolution_method == "single_permitted_authority_in_referenced_note"
+    assert one_result.human_review_required is False
+
+    # A footnote with two authorities must stay ambiguous rather than
+    # silently picking one -- this is what corpus doc dev-supra-note-01
+    # encodes (ambiguous_short_forms == 1).
+    many = _graph(
+        "Claim.[^1]\nLater, Author, supra note 1.\n\n"
+        "[^1]: Jane Author, First Article, 12 Example L. Rev. 100 (2020); "
+        "John Writer, Second Article, 13 Example L. Rev. 200 (2021).",
+        mode="whitepages",
+    )
+    many_result = _resolution(many, "supra_note")
+    assert many_result.resolved_authority_id is None
+    assert "referenced_note_has_multiple_authorities" in many_result.disqualifying_facts
+    assert many_result.human_review_required is True
+
+
 def test_distant_repeated_source_resolves_only_from_prior_occurrences():
     ir = parse_markdown_ir(
         "First.[^1]\n\nMiddle.[^2]\n\nDisputed, Author, supra note 1.\n\n"
@@ -233,3 +264,31 @@ def test_hereinafter_definition_and_later_use_are_linked():
     assert result.resolution_method == "prior_hereinafter_definition"
     assert result.resolved_authority_id is not None
     assert any(edge.edge_type == "hereinafter_to_antecedent" for edge in graph.edges)
+
+
+def test_id_resolution_follows_indigo_r15_3_prose_and_paragraph_semantics():
+    # Indigo R15.3: Id. is barred by a preceding multi-source citation, not by
+    # ordinary intervening prose. Prose that names another authority, or a
+    # paragraph break, still requires human review.
+    def last_resolution(text):
+        graph = build_citation_graph(parse_text_ir(text))
+        return graph.resolutions[-1]
+
+    full = "Baxter v. Cole, 1044 F.3d 900 (7th Cir. 2015)."
+    valid = last_resolution(f"{full} The court explained its reasoning at length. Id. at 905.")
+    assert valid.resolved_authority_id is not None
+    assert valid.human_review_required is False
+
+    other_case = last_resolution(f"{full} Unlike Harmon v. Reyes, that case was narrow. Id. at 905.")
+    assert other_case.resolved_authority_id is None
+    assert "intervening_authority_reference" in other_case.disqualifying_facts
+
+    paragraph = last_resolution(f"{full}\n\nA new paragraph begins here. Id. at 905.")
+    assert paragraph.resolved_authority_id is None
+    assert "intervening_paragraph_break" in paragraph.disqualifying_facts
+
+    string_cite = last_resolution(
+        f"{full[:-1]}; Doe v. Roe, 345 F.3d 1 (7th Cir. 2016). Id. at 905."
+    )
+    assert string_cite.resolved_authority_id is None
+    assert "preceding_citation_group_has_multiple_authorities" in string_cite.disqualifying_facts

@@ -270,10 +270,19 @@ def parse_text_ir(
 ) -> DocumentIR:
     primary: list[DocumentBlock] = []
     note_definition_spans: list[tuple[int, int]] = []
+    markdown_note_order = 0
     for index, match in enumerate(
         re.finditer(r"\S(?:.*?\S)?(?=\n\s*\n|\s*\Z)", text, re.DOTALL)
     ):
         note = re.match(r"^\[(\d+)\]\s+", match.group(0))
+        # Markdown-style footnote definitions ("[^1]: ...") reach this parser
+        # whenever a caller hands plain text containing them (review_document
+        # always calls parse_text_ir, never parse_markdown_ir). Without this
+        # branch such a paragraph falls through to the generic "paragraph"
+        # case below and never gets a note_number, which makes supra-note
+        # resolution (which matches on location.note_number) structurally
+        # unreachable for these documents.
+        markdown_note = None if note else re.match(r"^\[\^([^\]]+)\]:\s*", match.group(0))
         if note:
             value = match.group(0)[note.end() :]
             primary.append(
@@ -286,6 +295,23 @@ def parse_text_ir(
                     note_id=note.group(1),
                     note_number=note.group(1),
                     metadata={"plain_text_identifier": note.group(1), "paragraph_order": 0},
+                )
+            )
+            note_definition_spans.append(match.span())
+        elif markdown_note:
+            markdown_note_order += 1
+            identifier = markdown_note.group(1)
+            value = match.group(0)[markdown_note.end() :]
+            primary.append(
+                _block(
+                    f"footnote:{identifier}:p:0",
+                    "footnote",
+                    value,
+                    match.start() + markdown_note.end(),
+                    index,
+                    note_id=identifier,
+                    note_number=str(markdown_note_order),
+                    metadata={"markdown_identifier": identifier, "paragraph_order": 0},
                 )
             )
             note_definition_spans.append(match.span())
@@ -305,6 +331,28 @@ def parse_text_ir(
                 next_order,
                 note_id=match.group(1),
                 note_number=match.group(1),
+            )
+        )
+        next_order += 1
+    # Markdown-style in-body reference markers ("[^1]", not the "[^1]:"
+    # definition itself). citation_graph._logical_key uses these to order a
+    # footnote's citations as if they appeared at the reference marker's
+    # position in the body -- not at the footnote definition's position near
+    # the end of the document -- which is what lets a "supra note N" mention
+    # earlier in the body correctly see the footnote's citations as prior.
+    for ref_index, match in enumerate(re.finditer(r"\[\^([^\]]+)\](?!:)", text)):
+        if any(start <= match.start() < end for start, end in note_definition_spans):
+            continue
+        references.append(
+            _block(
+                f"body:footnote-ref-md:{ref_index}",
+                "footnote_reference",
+                match.group(0),
+                match.start(),
+                next_order,
+                note_id=match.group(1),
+                note_number=match.group(1),
+                metadata={"markdown_identifier": match.group(1)},
             )
         )
         next_order += 1
