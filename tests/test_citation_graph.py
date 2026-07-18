@@ -264,3 +264,31 @@ def test_hereinafter_definition_and_later_use_are_linked():
     assert result.resolution_method == "prior_hereinafter_definition"
     assert result.resolved_authority_id is not None
     assert any(edge.edge_type == "hereinafter_to_antecedent" for edge in graph.edges)
+
+
+def test_id_resolution_follows_indigo_r15_3_prose_and_paragraph_semantics():
+    # Indigo R15.3: Id. is barred by a preceding multi-source citation, not by
+    # ordinary intervening prose. Prose that names another authority, or a
+    # paragraph break, still requires human review.
+    def last_resolution(text):
+        graph = build_citation_graph(parse_text_ir(text))
+        return graph.resolutions[-1]
+
+    full = "Baxter v. Cole, 1044 F.3d 900 (7th Cir. 2015)."
+    valid = last_resolution(f"{full} The court explained its reasoning at length. Id. at 905.")
+    assert valid.resolved_authority_id is not None
+    assert valid.human_review_required is False
+
+    other_case = last_resolution(f"{full} Unlike Harmon v. Reyes, that case was narrow. Id. at 905.")
+    assert other_case.resolved_authority_id is None
+    assert "intervening_authority_reference" in other_case.disqualifying_facts
+
+    paragraph = last_resolution(f"{full}\n\nA new paragraph begins here. Id. at 905.")
+    assert paragraph.resolved_authority_id is None
+    assert "intervening_paragraph_break" in paragraph.disqualifying_facts
+
+    string_cite = last_resolution(
+        f"{full[:-1]}; Doe v. Roe, 345 F.3d 1 (7th Cir. 2016). Id. at 905."
+    )
+    assert string_cite.resolved_authority_id is None
+    assert "preceding_citation_group_has_multiple_authorities" in string_cite.disqualifying_facts
