@@ -149,6 +149,69 @@ def test_extracts_state_statute_and_supra_metadata():
     assert supra.components["antecedent_guess"] == "Foo"
 
 
+def test_sentence_initial_id_in_prose_without_antecedent_is_left_alone():
+    # "Id"/"id" opening a sentence is a citation short form only when a real
+    # authority precedes it; ordinary prose (the Freudian id) must never be
+    # rewritten to "Id." by the deterministic autofixer.
+    text = (
+        "The mind consists of the id, ego, and superego. "
+        "Id represents primitive instinct in Freudian theory."
+    )
+    result = CitationEngine().fix(text, mode="whitepages")
+    assert result["fixed_text"] == text
+    assert result["applied_edits"] == []
+    report = CitationEngine().analyze(text, mode="whitepages")
+    assert not any(issue["code"].startswith("SHORT_FORM") for issue in report["issues"])
+
+
+def test_orphaned_id_with_period_is_still_flagged_not_dropped():
+    # A period-terminated "Id." with no antecedent is a genuine B4/Rule 4
+    # defect and must still surface as SHORT_FORM_ORPHAN_ID, even though the
+    # period-less prose "Id" in the same position would be left alone.
+    text = (
+        "This is an introduction with no citations at all in this paragraph "
+        "whatsoever. Id. controls the outcome of this case."
+    )
+    report = CitationEngine().analyze(text, mode="bluepages")
+    assert any(c["source_type"] == "short_form" for c in report["citations"])
+    assert any(issue["code"] == "SHORT_FORM_ORPHAN_ID" for issue in report["issues"])
+
+
+def test_eyecite_bare_id_without_citation_context_is_not_a_citation():
+    # eyecite emits an IdCitation for a bare "id." even with no antecedent;
+    # AutoCite must not treat "password id." as a legal short form.
+    text = "Please enter your password id. in the field."
+    report = CitationEngine().analyze(text, mode="bluepages")
+    assert not any(c["source_type"] == "short_form" for c in report["citations"])
+    assert not any(issue["code"].startswith("SHORT_FORM") for issue in report["issues"])
+
+
+def test_spaced_period_reporter_is_recognized_and_normalized():
+    text = "See 100 U . S . 200 (1990)."
+    result = CitationEngine().fix(text, mode="bluepages")
+    assert result["fixed_text"] == "See 100 U.S. 200 (1990)."
+
+
+def test_bluepages_does_not_flag_unarchived_url():
+    # INTERNET_ARCHIVE_REVIEW is a Whitepages-only rule; the same URL must not
+    # be flagged in Bluepages mode.
+    report = CitationEngine().analyze(
+        "See https://example.com/legal-update.", mode="bluepages"
+    )
+    assert not any(
+        issue["code"] == "INTERNET_ARCHIVE_REVIEW" for issue in report["issues"]
+    )
+
+
+def test_citation_dense_document_extracts_all_without_hanging():
+    # Overlap resolution is O(n log n); a citation-dense document must extract
+    # every authority quickly rather than degrading to a quadratic hang.
+    text = " ".join(f"42 U.S.C. § {i}." for i in range(5000))
+    citations = CitationEngine().extract(text)
+    statutes = [c for c in citations if c.source_type == "statute"]
+    assert len(statutes) == 5000
+
+
 def test_extracts_state_reporter_case():
     text = "Smith v. Jones, 12 Cal. 5th 100, 105 (2022)."
     case = next(

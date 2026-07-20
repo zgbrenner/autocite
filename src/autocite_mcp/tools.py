@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import re
@@ -381,7 +382,12 @@ async def review_uploaded_document(
             "file must contain data_base64 or an authorized HTTPS download_url"
         )
 
-    loaded = load_document_bytes(payload, filename, mime_type)
+    # Parsing (DOCX/PDF decode and structure reconstruction) is CPU-bound and
+    # synchronous. Run it off the event loop so one large upload cannot block
+    # other clients of a hosted server while it is being parsed.
+    loaded = await asyncio.to_thread(
+        load_document_bytes, payload, filename, mime_type
+    )
     result = await review_document(
         loaded.text,
         document_type=document_type,
@@ -581,6 +587,8 @@ def check_single_citation(
     mode: str = "bluepages",
 ) -> dict[str, Any]:
     """Analyze exactly one citation and return a focused result."""
+    if not citation.strip():
+        raise ValueError("citation must not be empty")
     report = _ENGINE.analyze(citation, mode=mode)
     substantive = [
         item
@@ -606,6 +614,8 @@ def convert_citation(
     output_style: str = "plain",
 ) -> dict[str, Any]:
     """Convert a recognized citation using only facts present in the input."""
+    if not citation.strip():
+        raise ValueError("citation must not be empty")
     mode = validate_mode(target_mode)
     report = _ENGINE.analyze(citation, mode=mode)
     substantive = [
@@ -638,13 +648,22 @@ def convert_citation(
         )
     elif source_type in {"statute", "regulation"}:
         if components.get("title"):
+            fields = {
+                "title": components["title"],
+                "code": components["code"],
+                "section": components["section"],
+            }
+            year = components.get("year")
+            if year:
+                fields["year"] = year
+            elif source_type == "regulation":
+                raise ValueError(
+                    "A full C.F.R. citation requires the year of the code edition, "
+                    "which is not present in the source citation"
+                )
             converted = generate_citation(
                 source_type,
-                {
-                    "title": components["title"],
-                    "code": components["code"],
-                    "section": components["section"],
-                },
+                fields,
                 mode=mode,
                 output_style=output_style,
             )
@@ -765,7 +784,7 @@ def list_capabilities() -> dict[str, Any]:
                 "Groups resolvable full and short citations by antecedent"
             ),
             "safe_autofixes": [
-                "reporter abbreviations",
+                "federal reporter abbreviations",
                 "U.S.C. and C.F.R. abbreviations",
                 "section-symbol spacing",
                 "Id. capitalization and punctuation",

@@ -1,12 +1,22 @@
 from __future__ import annotations
 
+import bisect
+import heapq
 import re
 from dataclasses import asdict
 from typing import Any, Pattern
 
-from .extractors import extract_eyecite_citations, overlaps
+from .extractors import extract_eyecite_citations
 from .models import CitationIssue, CitationMatch
 from .rules import RULE_CATALOG, rule_reference, validate_mode
+
+# Source types that can serve as the antecedent of an "id"/"Id." short form.
+_SUBSTANTIVE_SOURCE_TYPES = frozenset(
+    {"case", "statute", "regulation", "constitution", "journal_article"}
+)
+# How far before a bare "Id." a real authority may sit and still be its
+# antecedent. Mirrors the window used by the SHORT_FORM_ORPHAN_ID check below.
+_ID_ANTECEDENT_WINDOW = 500
 
 
 CASE_PATTERN = re.compile(
@@ -15,10 +25,17 @@ CASE_PATTERN = re.compile(
     r"(?P<first_page>\d{1,6})(?:,\s*(?P<pincite>\d{1,6}(?:[-–]\d{1,6})?))?\s*"
     r"\((?P<court_year>[^)]*\d{4})\)"
 )
+# Reporter tokens tolerate spaces on *either* side of their periods so a
+# mis-spaced abbreviation ("U . S .", "F . Supp . 2d") is still recognized and
+# normalized. _canonical_reporter strips both periods and spaces, so any spacing
+# variant collapses to the same canonical form. Internal spacing is bounded
+# (never more than a stray space or two in a real abbreviation) so the pattern
+# cannot backtrack super-linearly on a run of whitespace.
 REPORTER_PATTERN = re.compile(
-    r"\b(?P<volume>\d{1,4})\s+(?P<reporter>U\.?\s*S\.?|S\.?\s*Ct\.?|"
-    r"F\.?\s*(?:Supp\.?\s*(?:2d|3d)?|2d|3d)|F\.|"
-    r"L\.?\s*Ed\.?\s*(?:2d)?)\s+"
+    r"\b(?P<volume>\d{1,4})\s+(?P<reporter>U\s{0,2}\.?\s{0,2}S\s{0,2}\.?|"
+    r"S\s{0,2}\.?\s{0,2}Ct\s{0,2}\.?|"
+    r"F\s{0,2}\.?\s{0,2}(?:Supp\s{0,2}\.?\s{0,2}(?:2d|3d)?|2d|3d)|F\s{0,2}\.|"
+    r"L\s{0,2}\.?\s{0,2}Ed\s{0,2}\.?\s{0,2}(?:2d)?)\s+"
     r"(?P<page>\d{1,6})\b",
     re.IGNORECASE,
 )
@@ -46,30 +63,71 @@ JOURNAL_PATTERN = re.compile(
 )
 
 
-def _looks_like_id_citation(text: str, start: int, end: int) -> bool:
+def _looks_like_id_citation(
+    text: str,
+    start: int,
+    end: int,
+    has_prior_citation: bool,
+    *,
+    has_pincite: bool = False,
+) -> bool:
     """Require "id."/"Id." to appear in an actual citation context.
 
-    The bare English word "id" (e.g. a form field) is never a citation short
-    form. Even with the literal trailing period, "id." only counts as a
-    citation short form when it is followed by a pincite (e.g. "id. at 5" or
-    "id., at 100"), begins a sentence/citation clause, or is preceded by a
-    citation signal (e.g. "See id.").
+    The bare English word "id" (an identifier, the Freudian id, a shorthand for
+    "identification") is never a citation short form. "id." counts as a citation
+    short form when it is:
+
+    * followed by a pincite (e.g. "id. at 5" or "id., at 100"), or
+    * preceded by a citation signal (e.g. "See id."), or
+    * placed at the start of a citation sentence and either written in
+      citation-shaped "Id."/"id." form (a trailing period) or preceded, within a
+      bounded window, by a real authority it can refer back to.
+
+    The trailing-period distinction matters in two directions. A period-less
+    sentence-initial "Id"/"id" with no antecedent is ordinary prose (e.g. "The
+    id, ego, and superego ... Id represents primitive instinct.") and must never
+    be rewritten to "Id." -- that would silently insert a period into
+    non-citation text. But a period-terminated "Id." with no antecedent is a
+    genuinely orphaned short form (a real B4/Rule 4 defect), so it is still
+    recognized here and left for the orphan check to flag rather than dropped.
     """
     after = text[end : end + 40]
-    if re.match(r"\s*,?\s*at\s+\d", after, re.IGNORECASE):
+    if has_pincite or re.match(r"\s*,?\s*at\s+\d", after, re.IGNORECASE):
         return True
     before = text[max(0, start - 60) : start]
-    if not before.strip():
-        return True
-    if re.search(r"[.!?][\"'”)\]]?\s*$", before):
-        return True
     if re.search(
         r"\b(?:see also|see generally|but see|but cf\.?|see|cf\.?|accord|compare|e\.g\.)\s*$",
         before,
         re.IGNORECASE,
     ):
         return True
-    return False
+    at_citation_boundary = (not before.strip()) or bool(
+        re.search(r"[.!?][\"'”)\]]?\s*$", before)
+    )
+    if not at_citation_boundary:
+        return False
+    if text[start:end].rstrip().endswith("."):
+        return True
+    return has_prior_citation
+
+
+def _union(sorted_spans: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    """Collapse start-sorted spans into a non-overlapping coverage union.
+
+    eyecite can return spans that nest or overlap (e.g. a full case citation
+    that contains a short reference), so the raw accepted spans are not
+    guaranteed disjoint. Merging them into a coverage union lets the fallback
+    overlap test stay a simple linear sweep while preserving the original
+    "reject any fallback match that overlaps any accepted match" semantics.
+    """
+    merged: list[tuple[int, int]] = []
+    for start, end in sorted_spans:
+        if merged and start <= merged[-1][1]:
+            if end > merged[-1][1]:
+                merged[-1] = (merged[-1][0], end)
+        else:
+            merged.append((start, end))
+    return merged
 
 
 def _canonical_reporter(reporter: str) -> str:
@@ -122,7 +180,25 @@ class CitationEngine:
     """Conservative legal citation analyzer and mechanical fixer."""
 
     def extract(self, text: str) -> list[CitationMatch]:
-        matches = extract_eyecite_citations(text)
+        matches = list(extract_eyecite_citations(text))
+        # ``intervals`` and ``substantive_ends`` are kept sorted so overlap and
+        # antecedent checks are O(log n) instead of a linear scan of every
+        # already-accepted match. Each fallback spec is applied as one ordered
+        # batch (regex finditer yields non-overlapping matches in start order),
+        # so the whole extraction is O(n log n) rather than the previous
+        # O(n^2), which let a citation-dense document hang the server.
+        intervals: list[tuple[int, int]] = _union(
+            sorted((item.start, item.end) for item in matches)
+        )
+        substantive_ends: list[int] = sorted(
+            item.end for item in matches if item.source_type in _SUBSTANTIVE_SOURCE_TYPES
+        )
+
+        def _has_prior_citation(position: int) -> bool:
+            lo = bisect.bisect_left(substantive_ends, position - _ID_ANTECEDENT_WINDOW)
+            hi = bisect.bisect_right(substantive_ends, position)
+            return hi > lo
+
         specs: list[tuple[str, Pattern[str]]] = [
             ("case", CASE_PATTERN),
             ("statute", STATUTE_PATTERN),
@@ -134,17 +210,24 @@ class CitationEngine:
             ("internet", URL_PATTERN),
         ]
         for source_type, pattern in specs:
+            new_matches: list[CitationMatch] = []
+            new_intervals: list[tuple[int, int]] = []
+            pointer = 0
             for match in pattern.finditer(text):
                 start, end = match.span()
-                if overlaps((start, end), matches):
+                # Advance past accepted intervals that end at/before this match,
+                # then reject the match if the next accepted interval overlaps it.
+                while pointer < len(intervals) and intervals[pointer][1] <= start:
+                    pointer += 1
+                if pointer < len(intervals) and intervals[pointer][0] < end:
                     continue
-                if pattern is ID_PATTERN and not _looks_like_id_citation(text, start, end):
+                if pattern is ID_PATTERN and not _looks_like_id_citation(
+                    text, start, end, _has_prior_citation(start)
+                ):
                     continue
                 if source_type == "internet":
-                    raw = match.group(0)
-                    trimmed = raw.rstrip(".,;:")
-                    end = start + len(trimmed)
-                    raw = trimmed
+                    raw = match.group(0).rstrip(".,;:")
+                    end = start + len(raw)
                 else:
                     raw = match.group(0)
                 components = {
@@ -152,9 +235,38 @@ class CitationEngine:
                     for key, value in match.groupdict().items()
                     if value is not None
                 }
-                matches.append(CitationMatch(source_type, raw, start, end, components))
-        matches.sort(key=lambda item: (item.start, item.end))
-        return matches
+                new_matches.append(CitationMatch(source_type, raw, start, end, components))
+                new_intervals.append((start, end))
+            if new_matches:
+                matches.extend(new_matches)
+                intervals = _union(list(heapq.merge(intervals, new_intervals)))
+                if source_type in _SUBSTANTIVE_SOURCE_TYPES:
+                    substantive_ends = list(
+                        heapq.merge(substantive_ends, [span[1] for span in new_intervals])
+                    )
+
+        # eyecite emits IdCitation objects without the citation-context gate the
+        # fallback ID_PATTERN passes through, so a bare English "id." (e.g.
+        # "enter your password id.") could slip in as a short-form citation.
+        # Drop eyecite-provided bare "id" short forms that lack citation context.
+        kept: list[CitationMatch] = []
+        for item in matches:
+            if (
+                item.source_type == "short_form"
+                and item.components.get("parser") == "eyecite"
+                and (item.components.get("form") or "").lower().rstrip(".") == "id"
+                and not _looks_like_id_citation(
+                    text,
+                    item.start,
+                    item.end,
+                    _has_prior_citation(item.start),
+                    has_pincite=bool(item.components.get("pincite")),
+                )
+            ):
+                continue
+            kept.append(item)
+        kept.sort(key=lambda item: (item.start, item.end))
+        return kept
 
     def analyze(self, text: str, *, mode: str = "bluepages") -> dict[str, Any]:
         normalized_mode = validate_mode(mode)

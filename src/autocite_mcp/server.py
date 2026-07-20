@@ -34,7 +34,7 @@ from .output_models import (
     RuleRetrievalOutput,
 )
 from .proposal_models import enforce_model_source_policy
-from .rules import RULE_CATALOG, validate_mode
+from .rules import RULE_CATALOG, validate_mode, validate_output_style
 from .slm_runtime import DEFAULT_MODEL
 from .tools import (
     check_citations as _check_citations,
@@ -429,16 +429,21 @@ def generate_citation(
     output_style: str = "plain",
 ) -> GenerateCitationOutput:
     """Generate a citation from structured source facts; error rather than guess."""
+    # Normalize before echoing so the reported mode/output_style match the
+    # canonical values actually used to render the citation (as convert_citation
+    # already does), rather than the raw caller-supplied strings.
+    normalized_mode = validate_mode(mode)
+    normalized_style = validate_output_style(output_style)
     citation = _generate_citation(
         source_type,
         fields,
-        mode=mode,
-        output_style=output_style,
+        mode=normalized_mode,
+        output_style=normalized_style,
     )
     return {
         "source_type": source_type,
-        "mode": mode,
-        "output_style": output_style,
+        "mode": normalized_mode,
+        "output_style": normalized_style,
         "citation": citation,
         "facts_used": fields,
     }

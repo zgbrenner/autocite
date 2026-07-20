@@ -292,3 +292,16 @@ def test_id_resolution_follows_indigo_r15_3_prose_and_paragraph_semantics():
     )
     assert string_cite.resolved_authority_id is None
     assert "preceding_citation_group_has_multiple_authorities" in string_cite.disqualifying_facts
+
+
+def test_year_then_proper_noun_prose_does_not_bar_id():
+    # "In 2020 Congress amended the statute" names no authority; a year followed
+    # by a capitalized word must not be mistaken for an intervening reporter
+    # citation that would wrongly leave an unambiguous Id. unresolved.
+    text = (
+        "Smith v. Jones, 500 U.S. 100, 105 (1990). "
+        "In 2020 Congress amended the statute. Id. at 106."
+    )
+    id_res = _graph(text).resolutions[-1]
+    assert id_res.resolved_authority_id is not None
+    assert "intervening_authority_reference" not in id_res.disqualifying_facts

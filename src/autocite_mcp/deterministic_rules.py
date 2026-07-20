@@ -303,6 +303,44 @@ SIGNAL_PATTERN = re.compile(
     re.I,
 )
 
+# A bare court/year (or year-only) parenthetical is ordinary citation metadata,
+# e.g. "(9th Cir. 2000)" or "(2000)" -- not the explanatory parenthetical that
+# Bluebook practice expects after cf./but cf. It is short and ends in a year
+# with no substantive explanatory prose before it.
+_COURT_YEAR_PARENTHETICAL = re.compile(
+    r"^[A-Za-z.\d'&,\- ]{0,40}\b(?:1[6-9]|20)\d{2}[a-z]?$"
+)
+
+
+def _is_court_or_year_metadata(content: str) -> bool:
+    """True when a parenthetical is just court/year citation metadata.
+
+    It ends in a year and carries only court/reporter/ordinal tokens. A real
+    explanatory parenthetical that merely happens to end in a year (e.g.
+    "discussing the statute as amended in 2000") contains an ordinary lowercase
+    word and is therefore not treated as metadata.
+    """
+    if not _COURT_YEAR_PARENTHETICAL.match(content):
+        return False
+    return not re.search(r"[a-z]{4,}", content)
+
+
+def _has_explanatory_parenthetical(window: str) -> bool:
+    """Return True when ``window`` contains a genuine explanatory parenthetical.
+
+    A citation's own court/year parenthetical does not satisfy the
+    explanatory-parenthetical expectation for a cf./but cf. signal, so those are
+    skipped; any other parenthetical that carries alphabetic content counts.
+    """
+    for match in re.finditer(r"\(([^)]*)\)", window):
+        content = match.group(1).strip()
+        if not re.search(r"[A-Za-z]", content):
+            continue
+        if _is_court_or_year_metadata(content):
+            continue
+        return True
+    return False
+
 
 def parse_signals(text: str) -> tuple[ParsedSignal, ...]:
     parsed: list[ParsedSignal] = []
@@ -367,7 +405,7 @@ def _signal_findings(ir: DocumentIR, graph: CitationGraph, mode: str) -> list[Ru
             )
         if lowered.rstrip(".") in {"cf", "but cf"}:
             following = ir.text[parsed.end : parsed.end + 240]
-            if not re.search(r"\([^)]*[A-Za-z][^)]*\)", following):
+            if not _has_explanatory_parenthetical(following):
                 findings.append(
                     _finding(
                         "SIGNAL_PARENTHETICAL_REVIEW",
@@ -390,11 +428,25 @@ def _citation_context_findings(
         components = occurrence.components
         if occurrence.source_type in {"case", "journal_article", "book"} and not components.get("pincite"):
             prefix = ir.text[max(0, occurrence.start - 260) : occurrence.start]
-            quote_match = re.search(r"[“\"][^”\"]{2,220}[”\"](?:\s+[^.;]{0,30})?\s*$", prefix)
-            code = "QUOTATION_PINCITE_REQUIRED" if quote_match else "PROPOSITION_PINCITE_REVIEW"
+            quote_match = re.search(
+                r"[“\"](?P<quoted>[^”\"]{2,220})[”\"](?:\s+[^.;]{0,30})?\s*$", prefix
+            )
+            # A single scare-quoted word (a defined term such as "employer") is
+            # not a direct quotation of the cited authority. Only multi-word
+            # quoted language is treated as a quotation that demands a pincite;
+            # otherwise fall back to the softer proposition-pincite review rather
+            # than asserting a quotation that may not exist.
+            is_direct_quotation = bool(
+                quote_match and " " in quote_match.group("quoted").strip()
+            )
+            code = (
+                "QUOTATION_PINCITE_REQUIRED"
+                if is_direct_quotation
+                else "PROPOSITION_PINCITE_REVIEW"
+            )
             explanation = (
                 "A direct quotation precedes this authority, but no pinpoint location was parsed."
-                if quote_match
+                if is_direct_quotation
                 else "Review whether this proposition requires a pinpoint citation."
             )
             findings.append(

@@ -23,29 +23,71 @@ def _optional(fields: Mapping[str, Any], name: str) -> str | None:
     return text or None
 
 
+# Canonical reporter abbreviations keyed by their period/space-stripped form, so
+# a mechanically malformed reporter ("P2d", "so.2d", "N E 2d") normalizes to the
+# Bluebook (Table T1) spelling. Single-capital initialisms close up with their
+# ordinal ("P.2d", "N.E.2d"); multi-letter word abbreviations keep a space
+# before the ordinal ("So. 2d", "F. Supp. 2d"). This never invents a reporter —
+# an unrecognized key is returned unchanged apart from whitespace collapsing.
+_REPORTER_ALIASES = {
+    # Federal
+    "US": "U.S.",
+    "SCT": "S. Ct.",
+    "LED": "L. Ed.",
+    "LED2D": "L. Ed. 2d",
+    "F": "F.",
+    "F2D": "F.2d",
+    "F3D": "F.3d",
+    "F4TH": "F.4th",
+    "FSUPP": "F. Supp.",
+    "FSUPP2D": "F. Supp. 2d",
+    "FSUPP3D": "F. Supp. 3d",
+    "FAPPX": "F. App'x",
+    "FEDCL": "Fed. Cl.",
+    # Regional reporters (Table T1)
+    "A": "A.",
+    "A2D": "A.2d",
+    "A3D": "A.3d",
+    "P": "P.",
+    "P2D": "P.2d",
+    "P3D": "P.3d",
+    "NE": "N.E.",
+    "NE2D": "N.E.2d",
+    "NE3D": "N.E.3d",
+    "NW": "N.W.",
+    "NW2D": "N.W.2d",
+    "NW3D": "N.W.3d",
+    "SE": "S.E.",
+    "SE2D": "S.E.2d",
+    "SW": "S.W.",
+    "SW2D": "S.W.2d",
+    "SW3D": "S.W.3d",
+    "SO": "So.",
+    "SO2D": "So. 2d",
+    "SO3D": "So. 3d",
+    "NYS": "N.Y.S.",
+    "NYS2D": "N.Y.S.2d",
+    "NYS3D": "N.Y.S.3d",
+    "CALRPTR": "Cal. Rptr.",
+    "CALRPTR2D": "Cal. Rptr. 2d",
+    "CALRPTR3D": "Cal. Rptr. 3d",
+}
+
+
 def _normalize_reporter(reporter: str) -> str:
     compact = re.sub(r"\s+", " ", reporter.strip())
     key = re.sub(r"[.\s]", "", compact).upper()
-    aliases = {
-        "US": "U.S.",
-        "SCT": "S. Ct.",
-        "F": "F.",
-        "F2D": "F.2d",
-        "F3D": "F.3d",
-        "FSUPP": "F. Supp.",
-        "FSUPP2D": "F. Supp. 2d",
-        "FSUPP3D": "F. Supp. 3d",
-        "LED": "L. Ed.",
-        "LED2D": "L. Ed. 2d",
-    }
-    return aliases.get(key, compact)
+    return _REPORTER_ALIASES.get(key, compact)
 
 
 def _normalize_code(code: str) -> str:
     key = re.sub(r"[.\s]", "", code).upper()
     return {
         "USC": "U.S.C.",
+        "USCA": "U.S.C.A.",
+        "USCS": "U.S.C.S.",
         "CFR": "C.F.R.",
+        "FEDREG": "Fed. Reg.",
     }.get(key, re.sub(r"\s+", " ", code.strip()))
 
 
@@ -80,13 +122,16 @@ def _statute(fields: Mapping[str, Any], _mode: str, _style: str) -> str:
 
 
 def _regulation(fields: Mapping[str, Any], _mode: str, _style: str) -> str:
-    values = _required(fields, ("title", "code", "section"))
-    year = _optional(fields, "year")
+    # Unlike a federal statute (where the year became optional in the 21st
+    # edition), a full C.F.R. citation still requires the year of the code
+    # edition (BP Rule B14 / Rule 14.2). Requiring it here refuses to present an
+    # incomplete regulation citation as finished rather than inventing a year.
+    values = _required(fields, ("title", "code", "section", "year"))
     result = (
         f"{values['title']} {_normalize_code(values['code'])} § "
         f"{values['section'].lstrip('§ ').strip()}"
     )
-    return f"{result} ({year})" if year else result
+    return f"{result} ({values['year']})"
 
 
 def _constitution(fields: Mapping[str, Any], _mode: str, _style: str) -> str:
@@ -125,14 +170,21 @@ def _book(fields: Mapping[str, Any], mode: str, output_style: str) -> str:
     return f"{result} ({parenthetical})"
 
 
-def _website(fields: Mapping[str, Any], _mode: str, _style: str) -> str:
+def _website(fields: Mapping[str, Any], _mode: str, output_style: str) -> str:
     values = _required(fields, ("title", "site", "url"))
+    # The specific-page title takes the same italic/underline typeface as a case
+    # name or book title (BP Rule B18.1.1 / Rule 18.2.2(b)(ii)).
+    title = values["title"]
+    if output_style == "markdown":
+        title = f"*{title}*"
+    elif output_style == "html":
+        title = f"<i>{title}</i>"
     author = _optional(fields, "author")
     date = _optional(fields, "date")
     archive_url = _optional(fields, "archive_url")
     on_file = bool(fields.get("on_file_with_author", False))
     lead = f"{author}, " if author else ""
-    result = f"{lead}{values['title']}, {values['site']}"
+    result = f"{lead}{title}, {values['site']}"
     if date:
         result += f" ({date})"
     result += f", {values['url']}"

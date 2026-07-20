@@ -84,7 +84,7 @@ SOURCE_GUIDANCE: dict[str, dict[str, Any]] = {
     "regulation": {
         "rule_families": {"bluepages": "B14", "whitepages": "Rule 14"},
         "template": "Title C.F.R. § section (year).",
-        "required_facts": ["title", "code", "section"],
+        "required_facts": ["title", "code", "section", "year"],
         "checks": [
             "Use the jurisdiction's preferred administrative code and abbreviation.",
             "Confirm the regulation year or currency information rather than assuming it.",

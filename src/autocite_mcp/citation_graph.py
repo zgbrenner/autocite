@@ -472,7 +472,18 @@ def build_citation_graph(ir: DocumentIR, *, mode: str = "bluepages") -> Citation
                 # authority ("v.", a reporter volume, a section symbol) or when
                 # the gap crosses a paragraph boundary, where the antecedent is
                 # no longer reliably the immediately preceding citation.
-                if re.search(r"\bv\.\s|\b\d{1,4}\s+[A-Z]|§|\bsupra\b|\bId\.\B", gap):
+                #
+                # The reporter-volume test requires the digits to be followed by
+                # an actual reporter-abbreviation shape (an initialism such as
+                # "U.S."/"N.E." or a short abbreviated word such as "Cal." or
+                # "F."), not any capitalized word. Otherwise ordinary prose like
+                # "In 2020 Congress amended the statute" (a year followed by a
+                # proper noun) would be misread as an intervening citation and
+                # would wrongly bar an unambiguous Id.
+                if re.search(
+                    r"\bv\.\s|\b\d{1,4}\s+(?:(?:[A-Z]\.){1,3}|[A-Z][a-z]{0,3}\.)|§|\bsupra\b|\bId\.\B",
+                    gap,
+                ):
                     disqualifying.append("intervening_authority_reference")
                 if "\n\n" in gap:
                     disqualifying.append("intervening_paragraph_break")

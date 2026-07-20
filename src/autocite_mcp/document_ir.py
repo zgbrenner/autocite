@@ -457,6 +457,13 @@ def parse_markdown_ir(
 # XML part may decompress to so a crafted DOCX cannot balloon in memory.
 MAX_DOCX_XML_BYTES = 50 * 1024 * 1024
 
+# A 15 MB PDF can carry tens of thousands of distinct /Page objects that all
+# share one tiny content stream, so the byte cap alone does not bound per-page
+# work. Cap the page count so a crafted PDF cannot pin the process in the
+# (formerly quadratic, now linear) page-extraction loop. This is far above any
+# real filing; genuinely larger records should be split before review.
+MAX_PDF_PAGES = 5000
+
 
 def _read_docx_xml(archive: zipfile.ZipFile, path: str) -> ET.Element:
     info = archive.getinfo(path)
@@ -675,9 +682,19 @@ def parse_pdf_ir(payload: bytes, *, filename: str = "document.pdf") -> DocumentI
         reader = PdfReader(io.BytesIO(payload))
     except Exception as exc:
         raise DocumentLoadError("ocr_required", "The PDF could not be parsed as a text PDF. OCR or a searchable PDF is required.") from exc
+    try:
+        page_count = len(reader.pages)
+    except Exception as exc:
+        raise DocumentLoadError("ocr_required", "The PDF page structure could not be read.") from exc
+    if page_count > MAX_PDF_PAGES:
+        raise DocumentLoadError(
+            "document_too_large",
+            f"The PDF has {page_count} pages; AutoCite reviews at most {MAX_PDF_PAGES} pages at once.",
+        )
     blocks: list[DocumentBlock] = []
     text_parts: list[str] = []
     order = 0
+    running_offset = 0
     uncertain = False
     for page_number, page in enumerate(reader.pages, 1):
         fragments: list[dict[str, Any]] = []
@@ -698,8 +715,10 @@ def parse_pdf_ir(payload: bytes, *, filename: str = "document.pdf") -> DocumentI
             fragments = [{"text": fallback, "x": 0.0, "y": 0.0, "font_size": 0.0}]
         if text_parts:
             text_parts.append("\n\n")
-        page_start = sum(len(item) for item in text_parts)
+            running_offset += 2
+        page_start = running_offset
         page_values: list[str] = []
+        page_chars = 0
         sizes = [item["font_size"] for item in fragments if item["font_size"] > 0]
         median_size = statistics.median(sizes) if sizes else 0
         height = float(getattr(getattr(page, "media_box", None), "height", 0) or 0)
@@ -707,8 +726,9 @@ def parse_pdf_ir(payload: bytes, *, filename: str = "document.pdf") -> DocumentI
             value = fragment["text"]
             if not value:
                 continue
-            fragment_start = page_start + sum(len(item) for item in page_values)
+            fragment_start = page_start + page_chars
             page_values.append(value)
+            page_chars += len(value)
             low_on_page = bool(height and fragment["y"] < height * 0.15)
             small_font = bool(median_size and fragment["font_size"] and fragment["font_size"] < median_size * 0.85)
             likely_note = low_on_page
@@ -730,6 +750,7 @@ def parse_pdf_ir(payload: bytes, *, filename: str = "document.pdf") -> DocumentI
             order += 1
         page_text = "".join(page_values) or fallback
         text_parts.extend(page_values or [fallback])
+        running_offset += page_chars if page_values else len(fallback)
         coordinates = tuple((item["x"], item["y"], item["font_size"]) for item in fragments)
         blocks.append(
             _block(

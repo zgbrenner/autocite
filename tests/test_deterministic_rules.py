@@ -122,3 +122,44 @@ def test_signals_and_nested_parentheticals_are_structurally_parsed():
     assert len(parentheticals) == 2
     assert all(item.balanced for item in parentheticals)
     assert max(item.depth for item in parentheticals) == 1
+
+
+def test_scare_quoted_defined_term_is_not_treated_as_direct_quotation():
+    # A single scare-quoted defined term is not a quotation of the cited
+    # authority, so it must not escalate to the assertive QUOTATION_PINCITE_REQUIRED.
+    findings = _findings(
+        'The statute defines the term "employer" in Smith v. Jones, '
+        "123 F.3d 456 (9th Cir. 2020)."
+    )
+    codes = {item.issue_code for item in findings}
+    assert "QUOTATION_PINCITE_REQUIRED" not in codes
+    assert "PROPOSITION_PINCITE_REVIEW" in codes
+
+
+def test_cf_with_only_court_year_parenthetical_still_prompts_review():
+    # A routine court/year parenthetical is citation metadata, not the
+    # explanatory parenthetical cf. calls for, so the review flag must still fire.
+    findings = _findings("Cf. Smith v. Jones, 123 F.3d 456 (9th Cir. 2020).")
+    assert any(item.issue_code == "SIGNAL_PARENTHETICAL_REVIEW" for item in findings)
+
+
+def test_cf_with_explanatory_parenthetical_is_not_flagged():
+    findings = _findings(
+        "Cf. Smith v. Jones, 123 F.3d 456 (9th Cir. 2020) "
+        "(holding that the statute applies)."
+    )
+    assert not any(
+        item.issue_code == "SIGNAL_PARENTHETICAL_REVIEW" for item in findings
+    )
+
+
+def test_cf_explanatory_parenthetical_ending_in_year_is_not_flagged():
+    # A genuine explanatory parenthetical that merely ends in a year must not
+    # be misread as bare court/year metadata and trigger a spurious review.
+    findings = _findings(
+        "Cf. Smith v. Jones, 123 F.3d 456 (9th Cir. 2000) "
+        "(discussing the statute as amended in 2000)."
+    )
+    assert not any(
+        item.issue_code == "SIGNAL_PARENTHETICAL_REVIEW" for item in findings
+    )

@@ -141,3 +141,17 @@ def test_get_citation_guidance_for_single_source():
     result = get_citation_guidance(mode="whitepages", source_type="journal_article")
     assert result["mode"] == "whitepages"
     assert set(result["sources"]) == {"journal_article"}
+
+
+def test_empty_citation_inputs_raise_clean_validation_error():
+    with pytest.raises(ValueError, match="citation must not be empty"):
+        check_single_citation("", mode="bluepages")
+    with pytest.raises(ValueError, match="citation must not be empty"):
+        convert_citation("", target_mode="bluepages")
+
+
+def test_convert_regulation_threads_or_requires_year():
+    converted = convert_citation("40 C.F.R. § 260.10 (2024)", target_mode="whitepages")
+    assert converted["converted"] == "40 C.F.R. § 260.10 (2024)"
+    with pytest.raises(ValueError, match="year"):
+        convert_citation("40 C.F.R. § 260.10", target_mode="whitepages")
