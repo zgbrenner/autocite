@@ -75,18 +75,21 @@ def _looks_like_id_citation(
 
     The bare English word "id" (an identifier, the Freudian id, a shorthand for
     "identification") is never a citation short form. "id." counts as a citation
-    short form only when it is:
+    short form when it is:
 
     * followed by a pincite (e.g. "id. at 5" or "id., at 100"), or
     * preceded by a citation signal (e.g. "See id."), or
-    * placed at the start of a citation sentence *and* preceded, within a
+    * placed at the start of a citation sentence and either written in
+      citation-shaped "Id."/"id." form (a trailing period) or preceded, within a
       bounded window, by a real authority it can refer back to.
 
-    The last clause is the load-bearing one: without a plausible antecedent, a
-    capitalized sentence-initial "Id"/"id" is ordinary prose (e.g. "The id, ego,
-    and superego ... Id represents primitive instinct.") and must never be
-    rewritten to "Id." -- doing so would silently insert a period into
-    non-citation text, which the deterministic autofixer is forbidden to do.
+    The trailing-period distinction matters in two directions. A period-less
+    sentence-initial "Id"/"id" with no antecedent is ordinary prose (e.g. "The
+    id, ego, and superego ... Id represents primitive instinct.") and must never
+    be rewritten to "Id." -- that would silently insert a period into
+    non-citation text. But a period-terminated "Id." with no antecedent is a
+    genuinely orphaned short form (a real B4/Rule 4 defect), so it is still
+    recognized here and left for the orphan check to flag rather than dropped.
     """
     after = text[end : end + 40]
     if has_pincite or re.match(r"\s*,?\s*at\s+\d", after, re.IGNORECASE):
@@ -101,7 +104,11 @@ def _looks_like_id_citation(
     at_citation_boundary = (not before.strip()) or bool(
         re.search(r"[.!?][\"'”)\]]?\s*$", before)
     )
-    return at_citation_boundary and has_prior_citation
+    if not at_citation_boundary:
+        return False
+    if text[start:end].rstrip().endswith("."):
+        return True
+    return has_prior_citation
 
 
 def _union(sorted_spans: list[tuple[int, int]]) -> list[tuple[int, int]]:

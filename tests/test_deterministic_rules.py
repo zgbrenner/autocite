@@ -151,3 +151,15 @@ def test_cf_with_explanatory_parenthetical_is_not_flagged():
     assert not any(
         item.issue_code == "SIGNAL_PARENTHETICAL_REVIEW" for item in findings
     )
+
+
+def test_cf_explanatory_parenthetical_ending_in_year_is_not_flagged():
+    # A genuine explanatory parenthetical that merely ends in a year must not
+    # be misread as bare court/year metadata and trigger a spurious review.
+    findings = _findings(
+        "Cf. Smith v. Jones, 123 F.3d 456 (9th Cir. 2000) "
+        "(discussing the statute as amended in 2000)."
+    )
+    assert not any(
+        item.issue_code == "SIGNAL_PARENTHETICAL_REVIEW" for item in findings
+    )

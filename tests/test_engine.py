@@ -164,6 +164,19 @@ def test_sentence_initial_id_in_prose_without_antecedent_is_left_alone():
     assert not any(issue["code"].startswith("SHORT_FORM") for issue in report["issues"])
 
 
+def test_orphaned_id_with_period_is_still_flagged_not_dropped():
+    # A period-terminated "Id." with no antecedent is a genuine B4/Rule 4
+    # defect and must still surface as SHORT_FORM_ORPHAN_ID, even though the
+    # period-less prose "Id" in the same position would be left alone.
+    text = (
+        "This is an introduction with no citations at all in this paragraph "
+        "whatsoever. Id. controls the outcome of this case."
+    )
+    report = CitationEngine().analyze(text, mode="bluepages")
+    assert any(c["source_type"] == "short_form" for c in report["citations"])
+    assert any(issue["code"] == "SHORT_FORM_ORPHAN_ID" for issue in report["issues"])
+
+
 def test_eyecite_bare_id_without_citation_context_is_not_a_citation():
     # eyecite emits an IdCitation for a bare "id." even with no antecedent;
     # AutoCite must not treat "password id." as a legal short form.

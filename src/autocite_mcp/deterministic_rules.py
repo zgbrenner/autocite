@@ -312,6 +312,19 @@ _COURT_YEAR_PARENTHETICAL = re.compile(
 )
 
 
+def _is_court_or_year_metadata(content: str) -> bool:
+    """True when a parenthetical is just court/year citation metadata.
+
+    It ends in a year and carries only court/reporter/ordinal tokens. A real
+    explanatory parenthetical that merely happens to end in a year (e.g.
+    "discussing the statute as amended in 2000") contains an ordinary lowercase
+    word and is therefore not treated as metadata.
+    """
+    if not _COURT_YEAR_PARENTHETICAL.match(content):
+        return False
+    return not re.search(r"[a-z]{4,}", content)
+
+
 def _has_explanatory_parenthetical(window: str) -> bool:
     """Return True when ``window`` contains a genuine explanatory parenthetical.
 
@@ -323,7 +336,7 @@ def _has_explanatory_parenthetical(window: str) -> bool:
         content = match.group(1).strip()
         if not re.search(r"[A-Za-z]", content):
             continue
-        if _COURT_YEAR_PARENTHETICAL.match(content):
+        if _is_court_or_year_metadata(content):
             continue
         return True
     return False
