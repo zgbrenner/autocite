@@ -273,3 +273,17 @@ async def test_generate_certification_report_structured_content_deep_shape() -> 
 
     assert "## Citations" in structured["markdown"]
     assert structured["statement"]
+
+
+def test_generate_citation_echoes_normalized_mode_and_style():
+    from autocite_mcp.server import generate_citation
+
+    out = generate_citation(
+        "statute",
+        {"title": "42", "code": "USC", "section": "1983"},
+        mode=" BLUEPAGES ",
+        output_style=" PLAIN ",
+    )
+    assert out["mode"] == "bluepages"
+    assert out["output_style"] == "plain"
+    assert out["citation"] == "42 U.S.C. § 1983"

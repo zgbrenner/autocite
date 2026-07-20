@@ -134,3 +134,55 @@ def test_plain_output_does_not_escape_fields():
     )
     assert "O'Brien" in citation
     assert "&#x27;" not in citation
+
+
+def test_regional_reporters_are_normalized():
+    pacific = generate_citation(
+        "case",
+        {
+            "case_name": "Smith v. Jones",
+            "volume": "123",
+            "reporter": "P2d",
+            "first_page": "456",
+            "year": "2005",
+        },
+    )
+    assert pacific == "Smith v. Jones, 123 P.2d 456 (2005)"
+    southern = generate_citation(
+        "case",
+        {
+            "case_name": "A v. B",
+            "volume": "5",
+            "reporter": "so.2d",
+            "first_page": "1",
+            "year": "2000",
+        },
+    )
+    assert southern == "A v. B, 5 So. 2d 1 (2000)"
+
+
+def test_regulation_requires_year():
+    with pytest.raises(ValueError, match="year"):
+        generate_citation(
+            "regulation", {"title": "40", "code": "C.F.R.", "section": "260.10"}
+        )
+    complete = generate_citation(
+        "regulation",
+        {"title": "40", "code": "C.F.R.", "section": "260.10", "year": "2024"},
+    )
+    assert complete == "40 C.F.R. § 260.10 (2024)"
+
+
+def test_website_title_takes_output_style_typeface():
+    html = generate_citation(
+        "website",
+        {"title": "My Title", "site": "Blog", "url": "http://x.com"},
+        output_style="html",
+    )
+    assert "<i>My Title</i>" in html
+    markdown = generate_citation(
+        "website",
+        {"title": "My Title", "site": "Blog", "url": "http://x.com"},
+        output_style="markdown",
+    )
+    assert "*My Title*" in markdown

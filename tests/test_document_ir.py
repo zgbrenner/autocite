@@ -248,3 +248,51 @@ def test_scanned_pdf_still_returns_ocr_required(monkeypatch):
     with pytest.raises(DocumentLoadError) as exc:
         parse_pdf_ir(b"%PDF-image", filename="scan.pdf")
     assert exc.value.code == "ocr_required"
+
+
+def test_pdf_page_count_is_capped(monkeypatch):
+    # A crafted PDF can pack tens of thousands of tiny pages under the byte
+    # cap; the page-count guard must reject it before per-page work begins.
+    from autocite_mcp.document_ir import MAX_PDF_PAGES
+
+    class Page:
+        def extract_text(self, visitor_text=None):
+            return "x"
+
+    class Reader:
+        def __init__(self, stream):
+            self.pages = [Page() for _ in range(MAX_PDF_PAGES + 1)]
+
+    monkeypatch.setattr("autocite_mcp.document_ir.PdfReader", Reader)
+    with pytest.raises(DocumentLoadError) as exc:
+        parse_pdf_ir(b"%PDF-huge", filename="huge.pdf")
+    assert exc.value.code == "document_too_large"
+
+
+def test_pdf_fragment_offsets_index_text_across_pages(monkeypatch):
+    # Guards the O(1) running-offset rewrite: every reconstructed fragment
+    # block's recorded span must still slice its own text out of ir.text.
+    class Box:
+        height = 800
+
+    class Page:
+        media_box = Box()
+
+        def __init__(self, number):
+            self.number = number
+
+        def extract_text(self, visitor_text=None):
+            if visitor_text:
+                visitor_text(f"Page {self.number} body. 42 USC 1983.\n", None, [1, 0, 0, 1, 72, 700], None, 12)
+                visitor_text(f"{self.number} A footnote fragment.", None, [1, 0, 0, 1, 72, 45], None, 8)
+            return f"Page {self.number} body. 42 USC 1983.\n{self.number} A footnote fragment."
+
+    class Reader:
+        def __init__(self, stream):
+            self.pages = [Page(i) for i in range(1, 6)]
+
+    monkeypatch.setattr("autocite_mcp.document_ir.PdfReader", Reader)
+    ir = parse_pdf_ir(b"%PDF-multi", filename="multi.pdf")
+    for block in ir.blocks:
+        if block.kind == "paragraph":
+            assert ir.text[block.absolute_start : block.absolute_end] == block.text

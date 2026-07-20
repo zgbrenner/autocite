@@ -135,7 +135,7 @@ Generic state profiles identify the jurisdiction but set `verified_overrides=fal
 
 AutoCite applies only high-confidence mechanical edits, including:
 
-- common reporter abbreviations;
+- common federal reporter abbreviations;
 - `U.S.C.` and `C.F.R.` abbreviations;
 - section-symbol spacing;
 - `Id.` capitalization and punctuation.
