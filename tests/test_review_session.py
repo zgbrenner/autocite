@@ -124,6 +124,23 @@ def test_export_plan_rejects_overlapping_accepted_edits():
         ReviewSession.from_result(result).export_plan()
 
 
+def test_export_plan_renders_only_currently_accepted_text_edits():
+    session = ReviewSession.from_result(FIXTURE_RESULT)
+    original = "See 42 USC §1983."
+
+    assert session.export_plan().apply_to_text(original) == "See 42 U.S.C. §1983."
+
+    rejected = session.reject(session.items[0].item_id)
+    assert rejected.export_plan().apply_to_text(original) == original
+
+
+def test_export_plan_refuses_stale_source_text():
+    plan = ReviewSession.from_result(FIXTURE_RESULT).export_plan()
+
+    with pytest.raises(ValueError, match="no longer matches"):
+        plan.apply_to_text("See 42 U.S.C. §1983.")
+
+
 def test_unknown_item_id_is_rejected():
     session = ReviewSession.from_result(FIXTURE_RESULT)
 
