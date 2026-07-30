@@ -30,6 +30,7 @@ jobs:
           src/autocite_mcp/desktop_entry.py
           src/autocite_mcp/desktop_export.py
           src/autocite_mcp/desktop_preservation.py
+          src/autocite_mcp/desktop_review_ui.py
           src/autocite_mcp/docx_preservation.py
           src/autocite_mcp/_docx_preservation_model.py
           src/autocite_mcp/_docx_preservation_package.py
@@ -37,6 +38,7 @@ jobs:
           src/autocite_mcp/_docx_preservation_mutation.py
           src/autocite_mcp/real_document_eval.py
           src/autocite_mcp/review_session.py
+          src/autocite_mcp/review_view_model.py
           scripts/package_desktop.py
           tests/test_desktop.py
           tests/test_desktop_console.py
@@ -46,6 +48,7 @@ jobs:
           tests/test_package_desktop.py
           tests/test_real_document_eval.py
           tests/test_review_session.py
+          tests/test_review_view_model.py
           tests/test_release_workflows.py
       - name: Test desktop and preservation paths
         run: >-
@@ -58,6 +61,7 @@ jobs:
           tests/test_package_desktop.py
           tests/test_real_document_eval.py
           tests/test_review_session.py
+          tests/test_review_view_model.py
           tests/test_release_workflows.py
       - name: Compile desktop and preservation paths
         run: >-
@@ -66,6 +70,7 @@ jobs:
           src/autocite_mcp/desktop_entry.py
           src/autocite_mcp/desktop_export.py
           src/autocite_mcp/desktop_preservation.py
+          src/autocite_mcp/desktop_review_ui.py
           src/autocite_mcp/docx_preservation.py
           src/autocite_mcp/_docx_preservation_model.py
           src/autocite_mcp/_docx_preservation_package.py
@@ -73,6 +78,7 @@ jobs:
           src/autocite_mcp/_docx_preservation_mutation.py
           src/autocite_mcp/real_document_eval.py
           src/autocite_mcp/review_session.py
+          src/autocite_mcp/review_view_model.py
           scripts/package_desktop.py
 
   build-desktop:
