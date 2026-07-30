@@ -7,7 +7,7 @@ import json
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from .desktop import (
     DesktopReviewController,
@@ -16,7 +16,7 @@ from .desktop import (
     build_desktop_report,
 )
 from .desktop_export import build_desktop_docx_export
-from .review_session import ReviewSession
+from .review_session import ReviewDecision, ReviewSession
 from .tools import export_review_docx
 
 
@@ -112,8 +112,25 @@ class PreservationDesktopReviewController(DesktopReviewController):
         )
         return base64.b64decode(str(artifact["data_base64"]), validate=True)
 
+    @staticmethod
+    def _session_with_decisions(
+        state: DesktopReviewState,
+        decisions: Mapping[str, ReviewDecision | str] | None,
+    ) -> ReviewSession:
+        if isinstance(state, PreservationDesktopReviewState) and state.review_session is not None:
+            session = state.review_session
+        elif state.result is not None:
+            session = ReviewSession.from_result(state.result)
+        else:
+            raise ValueError("a completed review is required before export")
+        return session.with_decisions(decisions) if decisions else session
+
     def export_docx(
-        self, state: DesktopReviewState, destination: Path
+        self,
+        state: DesktopReviewState,
+        destination: Path,
+        *,
+        decisions: Mapping[str, ReviewDecision | str] | None = None,
     ) -> dict[str, Any]:
         result = self._require_result(state)
         target = self._validate_destination(state, destination, ".docx")
@@ -122,11 +139,13 @@ class PreservationDesktopReviewController(DesktopReviewController):
             if isinstance(state, PreservationDesktopReviewState)
             else None
         )
+        session = self._session_with_decisions(state, decisions)
         export = build_desktop_docx_export(
             result=result,
             source_bytes=source_bytes,
             fallback_builder=self._fallback_docx,
             tracked=True,
+            decisions=session.decisions(),
         )
         _atomic_write(target, export.payload)
         return {
@@ -140,17 +159,18 @@ class PreservationDesktopReviewController(DesktopReviewController):
         }
 
     def export_json_report(
-        self, state: DesktopReviewState, destination: Path
+        self,
+        state: DesktopReviewState,
+        destination: Path,
+        *,
+        decisions: Mapping[str, ReviewDecision | str] | None = None,
     ) -> dict[str, Any]:
         self._require_result(state)
         target = self._validate_destination(state, destination, ".json")
         report = build_desktop_report(state)
+        session = self._session_with_decisions(state, decisions)
+        report["review_session"] = session.as_dict()
         if isinstance(state, PreservationDesktopReviewState):
-            report["review_session"] = (
-                state.review_session.as_dict()
-                if state.review_session is not None
-                else None
-            )
             report["docx_preservation"] = {
                 "ready": state.source_bytes is not None,
                 "warning": state.preservation_warning,
