@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from autocite_mcp.desktop_review_ui import review_item_details, review_item_label
+from autocite_mcp.desktop_review_ui import (
+    qt_cursor_position,
+    review_item_details,
+    review_item_label,
+)
 from autocite_mcp.review_session import ReviewDecision, ReviewSession
 
 
@@ -69,3 +73,13 @@ def test_review_item_details_exposes_source_range_provenance_and_missing_facts()
     assert "Missing facts: pinpoint page" in details
     assert "Provenance: deterministic_logic" in details
     assert "Accept marks this review item resolved" in details
+
+
+def test_qt_cursor_position_converts_python_offsets_to_utf16_units():
+    text = "A😀B"
+
+    assert qt_cursor_position(text, 0) == 0
+    assert qt_cursor_position(text, 1) == 1
+    assert qt_cursor_position(text, 2) == 3
+    assert qt_cursor_position(text, 3) == 4
+    assert qt_cursor_position(text, 100) == 4
