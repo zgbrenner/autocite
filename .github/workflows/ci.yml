@@ -9,23 +9,9 @@ permissions:
   contents: read
 
 jobs:
-  runner-probe:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Create runner proof
-        run: |
-          printf 'runner=%s\nsha=%s\n' "$RUNNER_NAME" "$GITHUB_SHA" > runner-proof.txt
-      - name: Upload runner proof
-        uses: actions/upload-artifact@v4
-        with:
-          name: runner-proof
-          path: runner-proof.txt
-          if-no-files-found: error
-
   test:
     runs-on: ubuntu-latest
     strategy:
-      fail-fast: false
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
@@ -33,30 +19,15 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Synchronize development environment
-        shell: bash
-        run: uv sync --extra dev 2>&1 | tee ci-sync.log
-      - name: Lint
-        shell: bash
-        run: uv run ruff check src tests training 2>&1 | tee ci-ruff.log
-      - name: Test
-        shell: bash
-        run: uv run pytest --junitxml=pytest-results.xml 2>&1 | tee ci-pytest.log
-      - name: Compile
-        shell: bash
-        run: uv run python -m compileall -q src/autocite_mcp training 2>&1 | tee ci-compile.log
-      - name: Evaluate deterministic corpus
-        shell: bash
-        run: uv run autocite eval --file evals/gold.jsonl 2>&1 | tee ci-eval.log
-      - name: Validate training data pipeline
-        shell: bash
-        run: |
-          set -o pipefail
-          uv run python training/build_dataset.py --output /tmp/autocite-slm.jsonl 2>&1 | tee ci-dataset.log
-          uv run python training/evaluate_slm.py --safety-file evals/slm_safety.jsonl 2>&1 | tee ci-safety.log
-      - name: Build distributions
-        shell: bash
-        run: uv build 2>&1 | tee ci-build.log
+      - run: uv sync --extra dev
+      - run: uv run ruff check src tests training
+      - run: uv run pytest --junitxml=pytest-results.xml
+      - run: uv run python -m compileall -q src/autocite_mcp training
+      - run: uv run autocite eval --file evals/gold.jsonl
+      - run: |
+          uv run python training/build_dataset.py --output /tmp/autocite-slm.jsonl
+          uv run python training/evaluate_slm.py --safety-file evals/slm_safety.jsonl
+      - run: uv build
       - name: Verify distribution boundaries
         run: |
           uv run python - <<'PY'
@@ -71,12 +42,10 @@ jobs:
           assert not any("The_Bluebook" in name for name in names)
           print(f"verified {wheel}")
           PY
-      - name: Upload CI diagnostics
+      - name: Upload pytest results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ci-diagnostics-${{ matrix.python-version }}
-          path: |
-            ci-*.log
-            pytest-results.xml
-          if-no-files-found: ignore
+          name: pytest-results-${{ matrix.python-version }}
+          path: pytest-results.xml
+          if-no-files-found: warn
