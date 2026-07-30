@@ -182,6 +182,13 @@ class PreservationDesktopReviewController(DesktopReviewController):
         report = build_desktop_report(state)
         session = self._session_with_decisions(state, decisions)
         plan = session.export_plan()
+        accepted_edit_items = [
+            item.as_dict()
+            for item in session.items
+            if item.kind is ReviewItemKind.TEXT_EDIT
+            and item.decision is ReviewDecision.ACCEPTED
+            and item.suggestion is not None
+        ]
 
         accepted = sum(
             item.decision is ReviewDecision.ACCEPTED for item in session.items
@@ -216,7 +223,7 @@ class PreservationDesktopReviewController(DesktopReviewController):
             }
         )
         report["summary"] = summary
-        report["applied_edits"] = [item.as_dict() for item in plan.text_edits]
+        report["applied_edits"] = accepted_edit_items
         report["review_session"] = session.as_dict()
         report["export_plan"] = plan.as_dict()
         report["decision_summary"] = {
