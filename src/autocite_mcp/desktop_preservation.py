@@ -1,0 +1,168 @@
+from __future__ import annotations
+
+import asyncio
+import base64
+import hashlib
+import json
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+from .desktop import (
+    DesktopReviewController,
+    DesktopReviewState,
+    _atomic_write,
+    build_desktop_report,
+)
+from .desktop_export import build_desktop_docx_export
+from .review_session import ReviewSession
+from .tools import export_review_docx
+
+
+@dataclass(frozen=True)
+class PreservationDesktopReviewState(DesktopReviewState):
+    source_bytes: bytes | None = field(default=None, repr=False, compare=False)
+    review_session: ReviewSession | None = field(default=None, repr=False, compare=False)
+    preservation_warning: str | None = None
+
+
+class PreservationDesktopReviewController(DesktopReviewController):
+    """Desktop controller that preserves the original Word package when possible."""
+
+    @staticmethod
+    def _upgrade_state(
+        state: DesktopReviewState,
+        *,
+        source_bytes: bytes | None = None,
+        preservation_warning: str | None = None,
+    ) -> PreservationDesktopReviewState:
+        session = ReviewSession.from_result(state.result) if state.result is not None else None
+        return PreservationDesktopReviewState(
+            original_text=state.original_text,
+            corrected_text=state.corrected_text,
+            result=state.result,
+            error_code=state.error_code,
+            error_message=state.error_message,
+            source_path=state.source_path,
+            source_bytes=source_bytes,
+            review_session=session,
+            preservation_warning=preservation_warning,
+        )
+
+    async def review_file(
+        self,
+        path: Path,
+        *,
+        document_type: str = "auto",
+        mode: str = "auto",
+        jurisdiction: str | None = None,
+        use_local_model: bool = False,
+    ) -> PreservationDesktopReviewState:
+        state = await super().review_file(
+            path,
+            document_type=document_type,
+            mode=mode,
+            jurisdiction=jurisdiction,
+            use_local_model=use_local_model,
+        )
+        if state.result is None or state.source_path is None:
+            return self._upgrade_state(state)
+        input_document = state.result.get("input_document")
+        source_format = (
+            str(input_document.get("source_format") or "")
+            if isinstance(input_document, dict)
+            else ""
+        )
+        if source_format != "docx":
+            return self._upgrade_state(state)
+        try:
+            source_bytes = await asyncio.to_thread(state.source_path.read_bytes)
+        except OSError as exc:
+            return self._upgrade_state(
+                state,
+                preservation_warning=(
+                    "AutoCite completed the review but could not retain the original "
+                    f"DOCX package for a structure-preserving export: {exc}"
+                ),
+            )
+        expected_hash = (
+            str(input_document.get("sha256") or "")
+            if isinstance(input_document, dict)
+            else ""
+        )
+        actual_hash = hashlib.sha256(source_bytes).hexdigest()
+        if not expected_hash or actual_hash != expected_hash:
+            return self._upgrade_state(
+                state,
+                preservation_warning=(
+                    "The DOCX changed while AutoCite was reviewing it. Review the current "
+                    "file again before creating a structure-preserving export."
+                ),
+            )
+        return self._upgrade_state(state, source_bytes=source_bytes)
+
+    @staticmethod
+    def _fallback_docx(original: str, corrected: str, tracked: bool) -> bytes:
+        artifact = export_review_docx(
+            original,
+            corrected,
+            tracked=tracked,
+            filename="autocite-review.docx",
+        )
+        return base64.b64decode(str(artifact["data_base64"]), validate=True)
+
+    def export_docx(
+        self, state: DesktopReviewState, destination: Path
+    ) -> dict[str, Any]:
+        result = self._require_result(state)
+        target = self._validate_destination(state, destination, ".docx")
+        source_bytes = (
+            state.source_bytes
+            if isinstance(state, PreservationDesktopReviewState)
+            else None
+        )
+        export = build_desktop_docx_export(
+            result=result,
+            source_bytes=source_bytes,
+            fallback_builder=self._fallback_docx,
+            tracked=True,
+        )
+        _atomic_write(target, export.payload)
+        return {
+            **export.metadata,
+            "filename": target.name,
+            "mime_type": (
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            ),
+            "path": str(target),
+            "size_bytes": len(export.payload),
+        }
+
+    def export_json_report(
+        self, state: DesktopReviewState, destination: Path
+    ) -> dict[str, Any]:
+        self._require_result(state)
+        target = self._validate_destination(state, destination, ".json")
+        report = build_desktop_report(state)
+        if isinstance(state, PreservationDesktopReviewState):
+            report["review_session"] = (
+                state.review_session.as_dict()
+                if state.review_session is not None
+                else None
+            )
+            report["docx_preservation"] = {
+                "ready": state.source_bytes is not None,
+                "warning": state.preservation_warning,
+            }
+        payload = (
+            json.dumps(
+                report,
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+                default=str,
+            )
+            + "\n"
+        ).encode("utf-8")
+        _atomic_write(target, payload)
+        return {"path": str(target), "size_bytes": len(payload)}
