@@ -44,6 +44,7 @@ jobs:
           tests/test_desktop_console.py
           tests/test_desktop_export.py
           tests/test_desktop_preservation.py
+          tests/test_desktop_review_ui.py
           tests/test_docx_preservation.py
           tests/test_package_desktop.py
           tests/test_real_document_eval.py
@@ -57,6 +58,7 @@ jobs:
           tests/test_desktop_console.py
           tests/test_desktop_export.py
           tests/test_desktop_preservation.py
+          tests/test_desktop_review_ui.py
           tests/test_docx_preservation.py
           tests/test_package_desktop.py
           tests/test_real_document_eval.py
