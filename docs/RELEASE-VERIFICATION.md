@@ -35,6 +35,7 @@ Run the high-risk desktop suites explicitly so failures are easy to isolate:
 uv run pytest \
   tests/test_review_session.py \
   tests/test_review_view_model.py \
+  tests/test_desktop_review_ui.py \
   tests/test_docx_preservation.py \
   tests/test_desktop_export.py \
   tests/test_desktop_preservation.py \
@@ -48,6 +49,7 @@ These tests must prove:
 - stable review IDs and deterministic accept, pending, and reject decisions;
 - bounded undo and redo behavior;
 - filters, search, navigation, and decision-aware preview generation;
+- UTF-16-correct Qt source highlighting for non-BMP characters;
 - refusal of overlapping or ambiguously mapped edits;
 - tracked and untracked Word edits;
 - Word-comment anchoring and audit-only fallback for unsafe annotation mappings;
@@ -101,7 +103,7 @@ On Windows, test the release on a computer with 8 GB RAM and no dedicated GPU:
 3. Confirm Standard local review is the default and optional model mode is unavailable unless separately installed.
 4. Review representative TXT, DOCX, and searchable PDF documents.
 5. Confirm the UI remains responsive during review.
-6. Exercise accept, reject, reset, accept-all-safe, undo, redo, search, every status filter, severity filtering, source-type filtering, previous and next navigation, and exact original-text selection.
+6. Exercise accept, reject, reset, accept-all-safe, undo, redo, search, every status filter, severity filtering, source-type filtering, rule-family filtering, previous and next navigation, and exact original-text selection.
 7. Confirm the corrected preview changes when a safe edit is rejected and restores when it is accepted again.
 8. Export a reviewed DOCX and JSON audit report using non-default decisions.
 9. For an original DOCX, confirm the export reports `original_docx`, preserves representative headers, footers, tables, styles, numbering, comments, footnotes, and endnotes that were not modified, and applies only accepted mapped edits.
