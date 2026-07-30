@@ -94,6 +94,43 @@ def test_non_docx_export_uses_clearly_labeled_reconstruction_fallback():
     assert export.metadata["preservation_mode"] == "reconstructed_text"
 
 
+def test_non_docx_export_renders_only_currently_accepted_decisions():
+    source = b"See 42 USC section 1983."
+    result = _result(source, source_format="text")
+    baseline = build_desktop_docx_export(
+        result=result,
+        source_bytes=source,
+        fallback_builder=lambda *_: b"baseline",
+    )
+    abbreviation_id = next(
+        item["item_id"]
+        for item in baseline.metadata["review_session"]["items"]
+        if item["code"] == "STATUTE_CODE_ABBREVIATION"
+    )
+    calls: list[tuple[str, str, bool]] = []
+
+    def fallback(original: str, corrected: str, tracked: bool) -> bytes:
+        calls.append((original, corrected, tracked))
+        return b"decision-aware"
+
+    export = build_desktop_docx_export(
+        result=result,
+        source_bytes=source,
+        fallback_builder=fallback,
+        decisions={abbreviation_id: "rejected"},
+    )
+
+    assert calls == [
+        (
+            "See 42 USC §1983.",
+            "See 42 USC § 1983.",
+            True,
+        )
+    ]
+    assert export.payload == b"decision-aware"
+    assert export.metadata["applied_edit_count"] == 1
+
+
 def test_docx_export_refuses_source_bytes_that_do_not_match_review_fingerprint():
     source = _docx_bytes()
     changed = source + b"changed"
