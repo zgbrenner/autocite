@@ -1,0 +1,23 @@
+name: Runner probe
+
+on:
+  push:
+    branches:
+      - codex/desktop-productization-0.6.0
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report runner allocation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          gh api "repos/$REPOSITORY/issues/20/comments" \
+            -f body="Runner probe reached a live GitHub-hosted runner for commit \`$SHA\`."
