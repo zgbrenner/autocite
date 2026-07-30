@@ -62,6 +62,7 @@ dev = [
 autocite-mcp = "autocite_mcp.hosting:main"
 autocite = "autocite_mcp.cli:main"
 autocite-desktop = "autocite_mcp.desktop_entry:run"
+autocite-eval-real = "autocite_mcp.real_document_eval:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/autocite_mcp"]
