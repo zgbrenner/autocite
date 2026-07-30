@@ -35,6 +35,7 @@ jobs:
           src/autocite_mcp/_docx_preservation_package.py
           src/autocite_mcp/_docx_preservation_index.py
           src/autocite_mcp/_docx_preservation_mutation.py
+          src/autocite_mcp/real_document_eval.py
           src/autocite_mcp/review_session.py
           scripts/package_desktop.py
           tests/test_desktop.py
@@ -43,6 +44,7 @@ jobs:
           tests/test_desktop_preservation.py
           tests/test_docx_preservation.py
           tests/test_package_desktop.py
+          tests/test_real_document_eval.py
           tests/test_review_session.py
           tests/test_release_workflows.py
       - name: Test desktop and preservation paths
@@ -54,6 +56,7 @@ jobs:
           tests/test_desktop_preservation.py
           tests/test_docx_preservation.py
           tests/test_package_desktop.py
+          tests/test_real_document_eval.py
           tests/test_review_session.py
           tests/test_release_workflows.py
       - name: Compile desktop and preservation paths
@@ -68,6 +71,7 @@ jobs:
           src/autocite_mcp/_docx_preservation_package.py
           src/autocite_mcp/_docx_preservation_index.py
           src/autocite_mcp/_docx_preservation_mutation.py
+          src/autocite_mcp/real_document_eval.py
           src/autocite_mcp/review_session.py
           scripts/package_desktop.py
 
@@ -99,18 +103,22 @@ jobs:
           VERSION=$(uv run python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
       - run: uv run pyinstaller packaging/autocite-desktop.spec --clean --noconfirm
-      - name: Run packaged self-test on Windows
+      - name: Run packaged self-tests on Windows
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $executable = (Resolve-Path "${{ matrix.executable }}").Path
-          $process = Start-Process -FilePath $executable -ArgumentList "--self-test" -Wait -PassThru
-          if ($process.ExitCode -ne 0) {
-            throw "Packaged AutoCite self-test failed with exit code $($process.ExitCode)"
+          foreach ($argument in @("--self-test", "--self-test-preservation")) {
+            $process = Start-Process -FilePath $executable -ArgumentList $argument -Wait -PassThru
+            if ($process.ExitCode -ne 0) {
+              throw "Packaged AutoCite $argument failed with exit code $($process.ExitCode)"
+            }
           }
-      - name: Run packaged self-test on Unix
+      - name: Run packaged self-tests on Unix
         if: runner.os != 'Windows'
-        run: ${{ matrix.executable }} --self-test
+        run: |
+          ${{ matrix.executable }} --self-test
+          ${{ matrix.executable }} --self-test-preservation
       - name: Package portable archive
         shell: bash
         run: |
