@@ -8,7 +8,7 @@ on:
       - pyproject.toml
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: desktop-${{ github.ref }}
@@ -23,65 +23,42 @@ jobs:
         with:
           python-version: "3.12"
       - run: uv sync --extra dev
-      - name: Lint desktop and preservation paths
-        run: >-
-          uv run ruff check
-          src/autocite_mcp/desktop.py
-          src/autocite_mcp/desktop_entry.py
-          src/autocite_mcp/desktop_export.py
-          src/autocite_mcp/desktop_preservation.py
-          src/autocite_mcp/desktop_review_ui.py
-          src/autocite_mcp/docx_preservation.py
-          src/autocite_mcp/_docx_preservation_model.py
-          src/autocite_mcp/_docx_preservation_package.py
-          src/autocite_mcp/_docx_preservation_index.py
-          src/autocite_mcp/_docx_preservation_mutation.py
-          src/autocite_mcp/real_document_eval.py
-          src/autocite_mcp/review_session.py
-          src/autocite_mcp/review_view_model.py
-          scripts/package_desktop.py
-          tests/test_desktop.py
-          tests/test_desktop_console.py
-          tests/test_desktop_export.py
-          tests/test_desktop_preservation.py
-          tests/test_desktop_review_ui.py
-          tests/test_docx_preservation.py
-          tests/test_package_desktop.py
-          tests/test_real_document_eval.py
-          tests/test_review_session.py
-          tests/test_review_view_model.py
-          tests/test_release_workflows.py
-      - name: Test desktop and preservation paths
-        run: >-
-          uv run pytest
-          tests/test_desktop.py
-          tests/test_desktop_console.py
-          tests/test_desktop_export.py
-          tests/test_desktop_preservation.py
-          tests/test_desktop_review_ui.py
-          tests/test_docx_preservation.py
-          tests/test_package_desktop.py
-          tests/test_real_document_eval.py
-          tests/test_review_session.py
-          tests/test_review_view_model.py
-          tests/test_release_workflows.py
-      - name: Compile desktop and preservation paths
-        run: >-
-          uv run python -m compileall -q
-          src/autocite_mcp/desktop.py
-          src/autocite_mcp/desktop_entry.py
-          src/autocite_mcp/desktop_export.py
-          src/autocite_mcp/desktop_preservation.py
-          src/autocite_mcp/desktop_review_ui.py
-          src/autocite_mcp/docx_preservation.py
-          src/autocite_mcp/_docx_preservation_model.py
-          src/autocite_mcp/_docx_preservation_package.py
-          src/autocite_mcp/_docx_preservation_index.py
-          src/autocite_mcp/_docx_preservation_mutation.py
-          src/autocite_mcp/real_document_eval.py
-          src/autocite_mcp/review_session.py
-          src/autocite_mcp/review_view_model.py
-          scripts/package_desktop.py
+      - name: Lint complete repository
+        run: uv run ruff check src tests training scripts
+      - name: Test complete repository
+        run: uv run pytest --junitxml=pytest-results.xml
+      - name: Compile complete repository
+        run: uv run python -m compileall -q src/autocite_mcp training scripts
+      - name: Evaluate deterministic gold corpus
+        run: uv run autocite eval --file evals/gold.jsonl
+      - name: Evaluate held-out system corpus
+        run: uv run autocite eval-system --file evals/system/documents.jsonl --split test --ablations
+      - name: Validate training data pipeline
+        run: |
+          uv run python training/build_dataset.py --output /tmp/autocite-slm.jsonl
+          uv run python training/evaluate_slm.py --safety-file evals/slm_safety.jsonl
+      - name: Build and inspect Python distributions
+        run: |
+          uv build
+          uv run python - <<'PY'
+          import zipfile
+          from pathlib import Path
+
+          wheel = next(Path("dist").glob("*.whl"))
+          with zipfile.ZipFile(wheel) as archive:
+              names = archive.namelist()
+          assert any(name.startswith("autocite_mcp/") for name in names)
+          assert not any(name.startswith("reference/") for name in names)
+          assert not any("The_Bluebook" in name for name in names)
+          print(f"verified {wheel}")
+          PY
+      - name: Upload verification diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-release-verification
+          path: pytest-results.xml
+          if-no-files-found: warn
 
   build-desktop:
     needs: verify
@@ -164,6 +141,8 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [build-desktop, build-python]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -186,18 +165,28 @@ jobs:
           fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "TAG=v$VERSION" >> "$GITHUB_ENV"
-      - name: Verify release checksums and manifests
+      - name: Verify release archives, checksums, and manifests
         run: |
           python - <<'PY'
           import hashlib
           import json
-          from pathlib import Path
+          import re
+          import stat
+          import zipfile
+          from pathlib import Path, PurePosixPath
 
+          device_name = re.compile(
+              r"^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$", re.IGNORECASE
+          )
           archives = sorted(Path("release").glob("*.zip"))
           assert len(archives) == 3, f"expected 3 portable archives, found {len(archives)}"
           for archive in archives:
               checksum = archive.with_suffix(archive.suffix + ".sha256")
-              manifest = archive.with_name(archive.name.removesuffix(".zip") + ".manifest.json")
+              manifest = archive.with_name(
+                  archive.name.removesuffix(".zip") + ".manifest.json"
+              )
+              assert checksum.is_file(), f"missing checksum for {archive.name}"
+              assert manifest.is_file(), f"missing manifest for {archive.name}"
               expected = checksum.read_text(encoding="utf-8").split()[0]
               actual = hashlib.sha256(archive.read_bytes()).hexdigest()
               assert actual == expected, f"checksum mismatch for {archive.name}"
@@ -206,26 +195,65 @@ jobs:
               assert metadata["portable"] is True
               assert metadata["requires_installer"] is False
               assert metadata["requires_python"] is False
+              assert metadata["version"] == archive.name.rsplit("-v", 1)[1][:-4]
+
+              seen: set[str] = set()
+              with zipfile.ZipFile(archive) as bundle:
+                  for member in bundle.infolist():
+                      raw = member.filename.replace("\\", "/")
+                      path = PurePosixPath(raw)
+                      assert raw not in seen, f"duplicate archive member: {raw}"
+                      seen.add(raw)
+                      assert not path.is_absolute(), f"absolute archive path: {raw}"
+                      assert ".." not in path.parts, f"archive traversal path: {raw}"
+                      assert not raw.startswith(("//", "\\\\")), f"device path: {raw}"
+                      assert not any(
+                          part.endswith(":") or device_name.match(part.rstrip(". "))
+                          for part in path.parts
+                      ), f"unsafe Windows archive path: {raw}"
+                      mode = (member.external_attr >> 16) & 0o170000
+                      assert mode != stat.S_IFLNK, f"symlink archive member: {raw}"
+                  required = {
+                      "AutoCite/START HERE.txt",
+                      "AutoCite/LICENSE.txt",
+                      "AutoCite/BUILD-MANIFEST.json",
+                  }
+                  assert required <= seen, f"missing required files in {archive.name}"
               print(f"verified {archive.name}")
           PY
-      - name: Create immutable version tag
+      - name: Create or verify immutable version tag
         env:
           GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
-          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
-            echo "Tag $TAG already exists; refusing to move an immutable release tag." >&2
-            exit 1
+          if git fetch origin "refs/tags/$TAG:refs/tags/$TAG" 2>/dev/null; then
+            EXISTING_COMMIT=$(git rev-list -n 1 "$TAG")
+            if [[ "$EXISTING_COMMIT" != "$GITHUB_SHA" ]]; then
+              echo "Tag $TAG already points to $EXISTING_COMMIT, not $GITHUB_SHA." >&2
+              exit 1
+            fi
+            echo "Verified existing immutable tag $TAG at $GITHUB_SHA."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "$TAG" "$GITHUB_SHA" -m "AutoCite $VERSION"
+            git push origin "$TAG"
           fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "$TAG" "$GITHUB_SHA" -m "AutoCite $VERSION"
-          git push origin "$TAG"
-      - name: Publish GitHub Release
+      - name: Create or update GitHub Release assets
         env:
           GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
-          gh release create "$TAG" release/* \
-            --verify-tag \
-            --latest \
-            --title "AutoCite $TAG" \
-            --notes-file packaging/RELEASE-NOTES.md
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" release/* --clobber
+            gh release edit "$TAG" \
+              --latest \
+              --title "AutoCite $TAG" \
+              --notes-file packaging/RELEASE-NOTES.md
+          else
+            gh release create "$TAG" release/* \
+              --verify-tag \
+              --latest \
+              --title "AutoCite $TAG" \
+              --notes-file packaging/RELEASE-NOTES.md
+          fi
