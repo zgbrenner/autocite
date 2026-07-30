@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import io
 import json
+import stat
 import zipfile
 from pathlib import Path
 
 import pytest
 from docx import Document
+from lxml import etree
 
 from autocite_mcp.docx_preservation import (
     DocxMappingError,
@@ -21,6 +23,9 @@ from autocite_mcp.review_session import (
     PlannedTextEdit,
     ReviewDecision,
 )
+
+
+W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 
 
 def _document_bytes(*, split_target: bool = False) -> bytes:
@@ -52,6 +57,39 @@ def _document_bytes(*, split_target: bool = False) -> bytes:
 def _parts(payload: bytes) -> dict[str, bytes]:
     with zipfile.ZipFile(io.BytesIO(payload)) as archive:
         return {name: archive.read(name) for name in archive.namelist()}
+
+
+def _package(
+    parts: dict[str, bytes],
+    *,
+    extra_entries: tuple[tuple[zipfile.ZipInfo | str, bytes], ...] = (),
+) -> bytes:
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
+        for name, data in parts.items():
+            archive.writestr(name, data)
+        for name_or_info, data in extra_entries:
+            archive.writestr(name_or_info, data)
+    return output.getvalue()
+
+
+def _with_target_run_attribute(payload: bytes) -> bytes:
+    parts = _parts(payload)
+    root = etree.fromstring(parts["word/document.xml"])
+    targets = root.xpath(
+        ".//w:t[text()='USC']",
+        namespaces={"w": W_NS},
+    )
+    assert len(targets) == 1
+    run = targets[0].getparent()
+    assert run is not None
+    run.set(f"{{{W_NS}}}rsidR", "00ABCDEF")
+    parts["word/document.xml"] = etree.tostring(
+        root,
+        xml_declaration=True,
+        encoding="UTF-8",
+    )
+    return _package(parts)
 
 
 def _edit(index_text: str) -> PlannedTextEdit:
@@ -94,8 +132,14 @@ def test_index_matches_autocite_body_and_table_text_order():
         "See 42 USC §1983 and Smith v. Jones."
         "\n\nRecord citation\tECF 12\nExhibit A\tPage 4"
     )
-    assert any(location.part_name == "word/document.xml" for location in index.locations)
-    assert all("header" not in location.part_name for location in index.locations)
+    assert any(
+        location.part_name == "word/document.xml"
+        for location in index.locations
+    )
+    assert all(
+        "header" not in location.part_name
+        for location in index.locations
+    )
 
 
 def test_apply_plan_tracks_edit_and_preserves_unmodified_parts():
@@ -120,6 +164,20 @@ def test_apply_plan_tracks_edit_and_preserves_unmodified_parts():
     assert "<w:ins" in document_xml
     assert "U.S.C." in document_xml
     assert validate_docx_package(result.payload).valid is True
+
+
+def test_tracked_edit_preserves_run_level_attributes_on_new_runs():
+    payload = _with_target_run_attribute(_document_bytes())
+    index = index_docx_text(payload)
+
+    result = apply_docx_export_plan(
+        payload,
+        ExportPlan((_edit(index.text),), ()),
+        tracked=True,
+    )
+
+    document_xml = _parts(result.payload)["word/document.xml"]
+    assert document_xml.count(b'rsidR="00ABCDEF"') == 2
 
 
 def test_untracked_edit_replaces_text_without_revision_markup():
@@ -201,9 +259,9 @@ def test_annotation_that_crosses_runs_remains_in_audit_instead_of_forcing_markup
     )
 
     assert result.anchored_annotation_ids == ()
-    assert [item.item_id for item in result.unanchored_annotations] == [
-        "annotation-cross-run"
-    ]
+    assert [
+        item.item_id for item in result.unanchored_annotations
+    ] == ["annotation-cross-run"]
     assert "word/comments.xml" not in _parts(result.payload)
 
 
@@ -213,15 +271,78 @@ def test_validator_rejects_missing_internal_relationship_target():
     rels_name = "word/_rels/document.xml.rels"
     rels = parts[rels_name].replace(
         b"</Relationships>",
-        b'<Relationship Id="rIdBroken" Type="urn:test" Target="missing.xml"/></Relationships>',
+        (
+            b'<Relationship Id="rIdBroken" Type="urn:test" '
+            b'Target="missing.xml"/></Relationships>'
+        ),
     )
-    output = io.BytesIO()
-    with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
-        for name, data in parts.items():
-            archive.writestr(name, rels if name == rels_name else data)
+    output = _package(
+        {
+            name: rels if name == rels_name else data
+            for name, data in parts.items()
+        }
+    )
 
-    with pytest.raises(DocxValidationError, match="missing relationship target"):
-        validate_docx_package(output.getvalue(), raise_on_error=True)
+    with pytest.raises(
+        DocxValidationError,
+        match="missing relationship target",
+    ):
+        validate_docx_package(output, raise_on_error=True)
+
+
+def test_validator_rejects_path_traversal_package_member():
+    payload = _package(
+        _parts(_document_bytes()),
+        extra_entries=(("../outside.txt", b"forbidden"),),
+    )
+
+    with pytest.raises(DocxValidationError, match="unsafe package path"):
+        validate_docx_package(payload, raise_on_error=True)
+
+
+def test_validator_rejects_symbolic_link_package_member():
+    link = zipfile.ZipInfo("word/linked.xml")
+    link.create_system = 3
+    link.external_attr = (stat.S_IFLNK | 0o777) << 16
+    payload = _package(
+        _parts(_document_bytes()),
+        extra_entries=((link, b"document.xml"),),
+    )
+
+    with pytest.raises(DocxValidationError, match="symbolic-link"):
+        validate_docx_package(payload, raise_on_error=True)
+
+
+def test_validator_rejects_xml_document_type_and_entity_declarations():
+    parts = _parts(_document_bytes())
+    parts["word/document.xml"] = (
+        b'<!DOCTYPE document [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>'
+        + parts["word/document.xml"]
+    )
+
+    with pytest.raises(
+        DocxValidationError,
+        match="prohibited document type declaration",
+    ):
+        validate_docx_package(
+            _package(parts),
+            raise_on_error=True,
+        )
+
+
+def test_validator_rejects_duplicate_comment_ids():
+    parts = _parts(_document_bytes())
+    parts["word/comments.xml"] = (
+        f'<w:comments xmlns:w="{W_NS}">'
+        '<w:comment w:id="0"/><w:comment w:id="0"/>'
+        "</w:comments>"
+    ).encode("utf-8")
+
+    with pytest.raises(DocxValidationError, match="duplicate comment IDs"):
+        validate_docx_package(
+            _package(parts),
+            raise_on_error=True,
+        )
 
 
 def test_result_metadata_is_json_serializable():
@@ -229,7 +350,10 @@ def test_result_metadata_is_json_serializable():
     index = index_docx_text(payload)
     result = apply_docx_export_plan(
         payload,
-        ExportPlan((_edit(index.text),), (_annotation(index.text),)),
+        ExportPlan(
+            (_edit(index.text),),
+            (_annotation(index.text),),
+        ),
         tracked=True,
     )
 
