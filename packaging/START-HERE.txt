@@ -1,0 +1,53 @@
+AUTOCITE DESKTOP
+================
+
+AutoCite is a local legal-citation reviewer. The standard review works without
+Python, an installer, administrator access, a dedicated GPU, model downloads,
+or an internet connection.
+
+START IN THREE STEPS
+--------------------
+1. Extract the entire ZIP file. Do not run AutoCite from inside the ZIP.
+2. Open the extracted AutoCite folder.
+3. Double-click AutoCite.exe on Windows, or the AutoCite executable on macOS or Linux.
+
+Then choose or drag in a TXT, Markdown, DOCX, or searchable PDF document.
+AutoCite automatically recommends Bluepages or Whitepages, applies only safe
+mechanical fixes, and shows anything that still needs human review.
+
+FOR AN 8 GB WINDOWS LAPTOP
+--------------------------
+Keep "Standard local review (recommended)" selected. This is the complete
+built-in deterministic reviewer and does not require the optional 0.8B model.
+Closing memory-heavy applications can help with unusually large documents.
+
+SAVING RESULTS
+--------------
+- "Save reviewed Word document" creates a new DOCX with tracked text changes.
+- "Save audit report" creates a compact JSON record of findings and boundaries.
+- AutoCite refuses to overwrite the source document.
+
+IMPORTANT LIMITS
+----------------
+AutoCite reviews supported citation mechanics. It does not determine whether an
+authority is good law, controlling, or supportive of a legal proposition. It
+does not replace current local rules, journal rules, official source review, or
+professional legal judgment.
+
+PDF NOTE
+--------
+A PDF must contain selectable text. If AutoCite reports that OCR is required,
+create a searchable PDF first and review that copy.
+
+WINDOWS SECURITY NOTICE
+-----------------------
+The portable build is not an installer and may be unsigned. Windows can display
+a reputation warning for newly released unsigned applications. Download only
+from this repository's official GitHub Release and compare the ZIP with its
+matching .sha256 file when authenticity matters.
+
+PRIVACY
+-------
+Standard review is processed locally. AutoCite has no telemetry and does not
+modify the original file. Network-based CourtListener review is not enabled in
+this portable desktop workflow.
