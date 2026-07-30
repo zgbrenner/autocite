@@ -37,32 +37,86 @@ The main options are:
 - **Jurisdiction:** automatic or general, federal, or California;
 - **Review engine:** standard deterministic review or an optional advanced local model when installed separately.
 
+## Review each item
+
+The workspace separates analysis from user decisions. Every detected change or review finding has a stable identity and one of three decisions:
+
+- **Accepted:** apply the supported text change, or mark a judgment-dependent item reviewed;
+- **Pending review:** retain the item in the review record without resolving it;
+- **Rejected:** do not apply the proposed text change and retain the decision in the review record.
+
+High-confidence safe mechanical edits begin as accepted. Judgment-dependent and unsupported findings begin as pending. **Accept all safe changes** affects only high-confidence `safe_auto_fix` items. It never accepts unsupported or judgment-dependent work.
+
+The workspace provides:
+
+- accept, reject, and reset controls for each item;
+- bounded undo and redo history;
+- previous and next navigation;
+- filters for decision state, correction level, severity, and citation source type;
+- full-text search across issue code, explanation, original text, suggestion, rule family, source type, and provenance;
+- exact selection of the source range in the original extracted text;
+- a corrected preview regenerated from the currently accepted text edits;
+- keyboard shortcuts for open, save, undo, redo, and item navigation;
+- a final review summary before export.
+
+A filter can hide an item immediately after its decision changes. This does not delete it. Clear or change the filter to see it again.
+
 ## Understand the results
 
 The summary reports:
 
 - detected citation style and confidence;
-- citation count;
-- safe fixes applied;
-- items requiring review;
-- items outside current rule coverage;
-- remaining detected mechanical issues.
+- total review items;
+- accepted, pending, and rejected counts;
+- items outside current rule coverage.
 
-The result tabs contain:
+The result areas contain:
 
-- **Corrected text:** the source text with only permitted mechanical edits applied;
-- **Original text:** the extracted source text;
-- **Review items:** structured findings with severity, confidence, correction level, location, provenance, rule family, missing facts, and any supported suggestion.
+- **Corrected preview:** the source text with only currently accepted mechanical edits applied;
+- **Original text:** the extracted source text, with the selected finding's source range highlighted;
+- **Item details:** explanation, decision, correction level, severity, confidence, location, source type, rule family, original text, suggestion, missing facts, and provenance.
 
 AutoCite intentionally labels ambiguous short forms, source-dependent issues, local-rule questions, and unsupported rule families instead of guessing.
 
+## Preserve an original DOCX
+
+When the source is DOCX, AutoCite creates the reviewed document from a copy of the original Word package rather than rebuilding a plain-text document.
+
+For edits that map unambiguously to supported Word text nodes, AutoCite:
+
+- inserts Word tracked deletions and insertions;
+- preserves the original run formatting around the edit;
+- leaves untouched package parts unchanged;
+- preserves surrounding tables, styles, numbering, headers, footers, hyperlinks, fields, bookmarks, section properties, footnotes, endnotes, comments, and other Word parts that are not modified;
+- adds a Word comment for a pending review item when its range maps safely to the main document;
+- validates the output package and every internal relationship before writing it.
+
+AutoCite refuses an edit when its range crosses an unsupported Word structure, an existing revision boundary, a hyperlink, a field, multiple package parts, or another mapping that cannot be proven safe. A review comment that cannot be anchored safely remains in the JSON audit report rather than forcing risky markup into the Word document.
+
+The original DOCX is fingerprinted during review. If it changes before export, AutoCite requires a new review rather than applying stale offsets.
+
+## Export non-DOCX sources
+
+TXT, Markdown, and PDF files do not contain an original Word package. For those formats, **Save reviewed Word document** creates a clearly labeled text-level DOCX containing the reviewed text and tracked insertions and deletions. It does not recreate the source file's complete visual layout or pagination.
+
 ## Save the work
 
-**Save reviewed Word document** creates a new DOCX with text-level tracked insertions and deletions. It does not recreate the source document's complete layout, styles, fields, footnotes, or pagination.
+**Save reviewed Word document** uses the decisions currently shown in the workspace. Pending and unsupported items can remain as review comments or audit entries. AutoCite warns before exporting while unresolved items remain.
 
-**Save audit report** creates a compact JSON record containing the document fingerprint, mode detection, summary, applied edits, citation inventory, review items, local-processing status, and accuracy boundaries. It does not include the source file's full local path.
+**Save audit report** creates a compact JSON record containing:
 
-Exports are written atomically. AutoCite also refuses to overwrite the source document, even when the same filename is selected accidentally.
+- the document fingerprint and source format;
+- mode detection and jurisdiction;
+- every review item with its stable ID and current decision;
+- applied text edits;
+- citation inventory;
+- local-model and local-retrieval status;
+- DOCX-preservation readiness and warnings;
+- accuracy boundaries.
+
+The audit report does not include the source file's full local path or the in-memory original document bytes.
+
+Exports are written atomically. AutoCite refuses to overwrite the source document, even when the same filename is selected accidentally.
 
 ## Privacy and network behavior
 
@@ -73,7 +127,8 @@ Standard desktop review:
 - does not load optional model packages;
 - does not download model weights;
 - does not send the document to CourtListener;
-- does not change the original file.
+- does not change the original file;
+- keeps original DOCX bytes in memory only for the active review and never writes them to settings or audit reports.
 
 Network-based CourtListener review remains available through the CLI and MCP workflows when explicitly configured. It is not enabled automatically in the portable desktop workflow.
 
@@ -95,9 +150,24 @@ Close the document in other programs, confirm that it still exists, or copy it t
 
 Close other applications and use Standard local review. The optional model is not required for normal citation review.
 
-## Packaged self-test
+### DOCX preservation is unavailable
 
-Release builds execute the application with `--self-test` on Windows, macOS, and Linux before publication. The self-test performs a deterministic citation correction, exports a reviewed DOCX, and verifies that the result exists and is nonempty.
+The source may have changed during review, become unreadable, or contain an unsupported mapping for an accepted edit. Review the current file again. AutoCite does not silently replace a preservation failure with a reconstructed DOCX for an original DOCX source.
+
+### A finding appears only in the audit report
+
+AutoCite could not anchor the finding to one safe Word text range. The finding remains available for human review without risking corruption of the DOCX package.
+
+## Packaged self-tests
+
+Release builds execute both commands on Windows, macOS, and Linux before publication:
+
+```text
+AutoCite --self-test
+AutoCite --self-test-preservation
+```
+
+The first command performs deterministic citation correction and creates a nonempty reviewed DOCX. The preservation command creates a structured DOCX with a header and table, reviews it, exports it through the preservation path, validates the package, confirms the header and table remain intact, and confirms the source hash is unchanged.
 
 Every portable ZIP also contains:
 
