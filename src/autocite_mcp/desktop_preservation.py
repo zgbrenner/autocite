@@ -50,6 +50,21 @@ class PreservationDesktopReviewController(DesktopReviewController):
             preservation_warning=preservation_warning,
         )
 
+    @staticmethod
+    def _preservation_failure(
+        state: DesktopReviewState,
+        message: str,
+    ) -> PreservationDesktopReviewState:
+        return PreservationDesktopReviewState(
+            original_text="",
+            corrected_text="",
+            result=None,
+            error_code="docx_preservation_unavailable",
+            error_message=message,
+            source_path=state.source_path,
+            preservation_warning=message,
+        )
+
     async def review_file(
         self,
         path: Path,
@@ -79,12 +94,11 @@ class PreservationDesktopReviewController(DesktopReviewController):
         try:
             source_bytes = await asyncio.to_thread(state.source_path.read_bytes)
         except OSError as exc:
-            return self._upgrade_state(
+            return self._preservation_failure(
                 state,
-                preservation_warning=(
-                    "AutoCite completed the review but could not retain the original "
-                    f"DOCX package for a structure-preserving export: {exc}"
-                ),
+                "AutoCite completed citation analysis but could not retain the original "
+                "Word package safely. The review was discarded and no export is available. "
+                f"Close other programs using the file, then review it again. Technical detail: {exc}",
             )
         expected_hash = (
             str(input_document.get("sha256") or "")
@@ -93,12 +107,10 @@ class PreservationDesktopReviewController(DesktopReviewController):
         )
         actual_hash = hashlib.sha256(source_bytes).hexdigest()
         if not expected_hash or actual_hash != expected_hash:
-            return self._upgrade_state(
+            return self._preservation_failure(
                 state,
-                preservation_warning=(
-                    "The DOCX changed while AutoCite was reviewing it. Review the current "
-                    "file again before creating a structure-preserving export."
-                ),
+                "The Word document changed while AutoCite was reviewing it. The review was "
+                "discarded and no export is available. Review the current file again.",
             )
         return self._upgrade_state(state, source_bytes=source_bytes)
 
