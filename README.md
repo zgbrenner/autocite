@@ -1,15 +1,28 @@
 # AutoCite MCP
 
-AutoCite turns Claude or ChatGPT into a safer legal-citation specialist for:
+AutoCite turns Claude, ChatGPT, or a local desktop app into a safer legal-citation specialist for:
 
-- **Bluepages** — briefs, motions, pleadings, court filings, and practitioner memoranda.
-- **Whitepages** — law reviews, student notes, seminar papers, and academic legal research.
+- **Bluepages:** briefs, motions, pleadings, court filings, and practitioner memoranda.
+- **Whitepages:** law reviews, student notes, seminar papers, and academic legal research.
 
-AutoCite 0.5 also includes an optional local SLM layer using [`foolish-bandit/AutoCite-0.8B`](https://huggingface.co/foolish-bandit/AutoCite-0.8B), a citation-specialized LoRA adapter based on `Qwen/Qwen3.5-0.8B`. The model can classify ambiguous citation issues and propose structured repairs, but deterministic validation remains in control of every automatic edit.
+AutoCite 0.6 also includes an optional local SLM layer using [`foolish-bandit/AutoCite-0.8B`](https://huggingface.co/foolish-bandit/AutoCite-0.8B), a citation-specialized LoRA adapter based on `Qwen/Qwen3.5-0.8B`. The model can classify ambiguous citation issues and propose structured repairs, but deterministic validation remains in control of every automatic edit.
 
-The normal workflow remains simple: connect AutoCite, provide text or a document, and ask the model to fix the citations. AutoCite detects the appropriate mode, applies deterministic fixes, supplies citation-rule knowledge, and—when explicitly requested—retrieves case authority to compare quotations, page markers, and candidate supporting passages.
+The normal workflow remains simple: provide text or a document, ask AutoCite to review the citations, and preserve everything else. AutoCite detects the appropriate mode, applies deterministic fixes, supplies citation-rule knowledge, and, when explicitly requested, retrieves case authority to compare quotations, page markers, and candidate supporting passages.
 
-## Install in three minutes
+## Download the portable desktop app
+
+The easiest option for nontechnical users is the portable desktop release.
+
+1. Open the repository's **Releases** page.
+2. Download `AutoCite-windows-x64-v0.6.0.zip` for a standard Windows laptop.
+3. Extract the entire ZIP.
+4. Open the extracted `AutoCite` folder and double-click `AutoCite.exe`.
+
+The portable desktop requires no installer, Python installation, administrator access, dedicated GPU, model download, or separate runtime. Standard local review is the recommended mode for computers with 8 GB of memory. It works offline, has no telemetry, and never modifies the source document.
+
+The desktop accepts TXT, Markdown, DOCX, and searchable PDF files. It provides automatic Bluepages or Whitepages selection, responsive background review, original and corrected text, structured review items, confidence and provenance details, reviewed Word export, and a compact JSON audit report. Every release ZIP includes a start guide, build manifest, license, and matching SHA-256 checksum. See [`docs/DESKTOP.md`](docs/DESKTOP.md).
+
+## Other installation options
 
 ### Claude Desktop: local and private
 
@@ -32,7 +45,7 @@ AUTOCITE_TRANSPORT=streamable-http autocite-mcp
 
 Connect an authenticated HTTPS endpoint ending in `/mcp`. For confidential work, use a private deployment or secure MCP tunnel rather than an unauthenticated public URL. Detailed steps are in [`docs/CONNECT.md`](docs/CONNECT.md).
 
-For hosted HTTP deployments, read [`docs/HOSTING.md`](docs/HOSTING.md) and set `AUTOCITE_API_TOKEN`. AutoCite binds to loopback (`127.0.0.1`) by default; binding a non-loopback host now requires both `AUTOCITE_ALLOW_REMOTE=1` and a configured `AUTOCITE_API_TOKEN`, so a hosted deployment cannot start unauthenticated by accident.
+For hosted HTTP deployments, read [`docs/HOSTING.md`](docs/HOSTING.md) and set `AUTOCITE_API_TOKEN`. AutoCite binds to loopback (`127.0.0.1`) by default. Binding a non-loopback host requires both `AUTOCITE_ALLOW_REMOTE=1` and a configured `AUTOCITE_API_TOKEN`, so a hosted deployment cannot start unauthenticated by accident.
 
 ## Start-here tools
 
@@ -40,7 +53,7 @@ For hosted HTTP deployments, read [`docs/HOSTING.md`](docs/HOSTING.md) and set `
 
 Use this for text-based requests. It returns:
 
-- automatic Bluepages/Whitepages selection;
+- automatic Bluepages or Whitepages selection;
 - corrected text containing deterministic citation edits;
 - exact citation spans and source classifications;
 - applied edits and unresolved issues;
@@ -58,7 +71,7 @@ Uploaded documents are parsed into a structure-preserving `DocumentIR`. DOCX foo
 
 Each review also builds a document-wide citation graph. It keeps conservative authority identities, every citation occurrence, structural relationships, and explicit short-form resolutions. Ambiguous `Id.`, short-case, `supra`, `supra note`, statutory short forms, and `hereinafter` uses return candidates and a review warning instead of a guessed antecedent. See [`docs/CITATION_GRAPH.md`](docs/CITATION_GRAPH.md).
 
-Contextual findings come from declared deterministic rule families and carry one of four correction levels. Only `safe_auto_fix` findings can be applied without approval. Exact supported, partial, and unsupported coverage is published in [`docs/RULE_COVERAGE.json`](docs/RULE_COVERAGE.json); AutoCite does not claim complete Bluebook compliance.
+Contextual findings come from declared deterministic rule families and carry one of four correction levels. Only `safe_auto_fix` findings can be applied without approval. Exact supported, partial, and unsupported coverage is published in [`docs/RULE_COVERAGE.json`](docs/RULE_COVERAGE.json). AutoCite does not claim complete Bluebook compliance.
 
 When a finding is ambiguous or requires explanation, AutoCite can retrieve a small set of approved original Markdown summaries entirely locally. Every result identifies its chunk ID, source file, heading, license, and ranking provenance. Clean citations skip retrieval. See [`docs/LOCAL_RULE_RETRIEVAL.md`](docs/LOCAL_RULE_RETRIEVAL.md).
 
@@ -66,9 +79,9 @@ When a finding is ambiguous or requires explanation, AutoCite can retrieve a sma
 
 MCP Apps-capable hosts can render a self-contained workspace with:
 
-- original/corrected review context;
+- original and corrected review context;
 - issue and source-evidence filters;
-- accept/reject controls;
+- accept and reject controls;
 - quotation and pincite statuses;
 - candidate source passages;
 - one-click corrected-text copying.
@@ -77,11 +90,11 @@ Text-only clients still receive a useful structured result.
 
 ### `export_review_docx`
 
-Creates an in-memory DOCX containing corrected text and optional Word insertion/deletion markup. It preserves text-level changes, not the original file's complete layout, styles, fields, footnotes, or pagination.
+Creates an in-memory DOCX containing corrected text and optional Word insertion and deletion markup. It preserves text-level changes, not the original file's complete layout, styles, fields, footnotes, or pagination.
 
 ### `generate_certification_report`
 
-Produces a court- and reviewer-facing audit trail for a document's citations: every citation with its verification tier, a truthful list of checks performed and checks not performed, a document fingerprint, and a statement suitable for filings that require a record of automated citation review. The report never asserts good-law status, proposition support, or complete Bluebook compliance. Set `verify_cases=true` or `deep_review=true` to include CourtListener matching (sends extracted citations over the network); by default the report is generated entirely locally and says so.
+Produces a court- and reviewer-facing audit trail for a document's citations: every citation with its verification tier, a truthful list of checks performed and checks not performed, a document fingerprint, and a statement suitable for filings that require a record of automated citation review. The report never asserts good-law status, proposition support, or complete Bluebook compliance. Set `verify_cases=true` or `deep_review=true` to include CourtListener matching, which sends extracted citations over the network. By default the report is generated entirely locally and says so.
 
 ## Deep source review
 
@@ -95,9 +108,9 @@ With `COURTLISTENER_TOKEN` configured and `deep_review=true`, AutoCite can:
 6. rank bounded candidate passages using disclosed lexical scores;
 7. report later-citation counts only as context labeled `not_a_citator`.
 
-AutoCite does **not** conclude that a source supports a legal proposition. Candidate passages always require legal judgment. It also does not determine good-law status, controlling authority, precedential weight, or positive/negative treatment. See [`docs/SOURCE_REVIEW.md`](docs/SOURCE_REVIEW.md).
+AutoCite does **not** conclude that a source supports a legal proposition. Candidate passages always require legal judgment. It also does not determine good-law status, controlling authority, precedential weight, or positive or negative treatment. See [`docs/SOURCE_REVIEW.md`](docs/SOURCE_REVIEW.md).
 
-Verification is built on the Free Law Project's CourtListener corpus by design, not as a stopgap. It is open and auditable: anyone can inspect what opinion text a candidate passage came from, reproduce a lookup, or check the underlying data, none of which is true of a closed, proprietary citator. That openness is why AutoCite reports lexical evidence for review rather than a black-box verdict.
+Verification is built on the Free Law Project's CourtListener corpus by design, not as a stopgap. It is open and auditable: anyone can inspect what opinion text a candidate passage came from, reproduce a lookup, or check the underlying data. That openness is why AutoCite reports lexical evidence for review rather than a black-box verdict.
 
 ## Jurisdiction profiles
 
@@ -121,7 +134,7 @@ Generic state profiles identify the jurisdiction but set `verified_overrides=fal
 | `check_citations` | Audit a document and return structured issues. |
 | `get_citation_graph` | Inspect authorities, occurrences, relationships, and resolutions. |
 | `resolve_short_form` | Resolve short forms or return bounded ambiguous candidates. |
-| `get_rule_coverage` | List tested partial and unsupported rule/source families. |
+| `get_rule_coverage` | List tested partial and unsupported rule and source families. |
 | `get_rule_context` | Retrieve source-attributed approved local rule summaries. |
 | `fix_citations` | Apply high-confidence mechanical fixes only. |
 | `check_single_citation` | Review exactly one recognized citation. |
@@ -163,7 +176,7 @@ SLM suggestions are not applied by default. Even with the application flag, a pr
 uv run autocite review "See 42 USC §1983." --slm --apply-slm-fixes
 ```
 
-Model loading is offline-only by default and never silently downloads weights during document review. Predownload both the base model and adapter, or explicitly pass `--allow-model-download` during a nonconfidential setup run. Ordinary AutoCite review does not import ML packages or load weights. Installed models are stored under `~/.local/share/autocite/models` by default; set `AUTOCITE_MODEL_DIR` to use a different model root. See [`docs/SLM.md`](docs/SLM.md) for CPU, GPU, quantized, offline, privacy, and smoke-test instructions.
+Model loading is offline-only by default and never silently downloads weights during document review. Predownload both the base model and adapter, or explicitly pass `--allow-model-download` during a nonconfidential setup run. Ordinary AutoCite review does not import ML packages or load weights. Installed models are stored under `~/.local/share/autocite/models` by default. Set `AUTOCITE_MODEL_DIR` to use a different model root. See [`docs/SLM.md`](docs/SLM.md) for CPU, GPU, quantized, offline, privacy, and smoke-test instructions.
 
 Review a DOCX or text PDF:
 
@@ -208,7 +221,7 @@ The baseline, safety gates, known quality gaps, and current decision not to retr
 
 ## Install and run from a checkout
 
-AutoCite requires Python 3.10 or later.
+AutoCite requires Python 3.10 or later when run from source.
 
 ```bash
 uv sync --extra dev
@@ -217,7 +230,7 @@ uv run autocite-mcp
 
 Local profiles, offline installation, model verification, health diagnostics, and host configuration are in [`docs/LOCAL_INSTALL.md`](docs/LOCAL_INSTALL.md).
 
-Install the optional local desktop shell with `uv tool install 'autocite-mcp[desktop]'`, then run `autocite-desktop`. See [`docs/DESKTOP.md`](docs/DESKTOP.md) for supported workflow and disclosed UI limitations.
+Install the local desktop from Python with `uv tool install 'autocite-mcp[desktop]'`, then run `autocite-desktop`. The portable release described above is simpler for ordinary desktop use and does not require Python.
 
 Compatible assistants can use the routing skills and local stdio examples under `skills/` and `host-integrations/`. See [`docs/SKILL_INTEGRATIONS.md`](docs/SKILL_INTEGRATIONS.md).
 
@@ -244,13 +257,13 @@ docker build -t autocite-mcp .
 docker run --rm -p 8000:8000 autocite-mcp
 ```
 
-The packaged server binds to loopback by default and refuses any other host unless both `AUTOCITE_ALLOW_REMOTE=1` and `AUTOCITE_API_TOKEN` are set. AutoCite is primarily a local product; if you do host it, follow [`docs/HOSTING.md`](docs/HOSTING.md) and keep the MCP endpoint and document review behind authentication.
+The packaged server binds to loopback by default and refuses any other host unless both `AUTOCITE_ALLOW_REMOTE=1` and `AUTOCITE_API_TOKEN` are set. AutoCite is primarily a local product. Hosted deployments should follow [`docs/HOSTING.md`](docs/HOSTING.md) and keep the MCP endpoint and document review behind authentication.
 
 ## Evaluation and release
 
 The repository includes a JSONL gold corpus and deterministic evaluator for extraction, correction, quotation comparison, and passage ranking. CI runs on Python 3.10, 3.11, 3.12, and 3.13, builds distributions, runs the evaluator, and verifies that the third-party reference corpus is absent from the wheel.
 
-A GitHub Release workflow is prepared for PyPI Trusted Publishing. Publication will work only after the repository owner configures the PyPI project or pending publisher and the GitHub `pypi` environment.
+Tagged releases build portable Windows, macOS, and Linux desktop bundles. Every packaged executable runs a review-and-export self-test before its ZIP is published. Release archives include file manifests and SHA-256 checksums. Python wheel and source distributions are attached separately. PyPI publication is an explicit manual action rather than a condition of creating the desktop release.
 
 ## Accuracy boundaries
 
@@ -268,9 +281,9 @@ AutoCite labels those questions for legal or editorial review rather than preten
 ## Development
 
 ```bash
-uv run ruff check src tests
+uv run ruff check src tests training
 uv run pytest
-uv run python -m py_compile src/autocite_mcp/*.py
+uv run python -m compileall -q src/autocite_mcp training
 uv run autocite eval --file evals/gold.jsonl
 uv build
 ```
