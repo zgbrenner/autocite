@@ -22,11 +22,17 @@ jobs:
       - run: uv sync --extra dev
       - run: uv run ruff check src tests training
       - run: uv run pytest --junitxml=pytest-results.xml
+      - name: Upload pytest results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-results-${{ matrix.python-version }}
+          path: pytest-results.xml
+          if-no-files-found: ignore
       - run: uv run python -m compileall -q src/autocite_mcp training
       - run: uv run autocite eval --file evals/gold.jsonl
-      - run: |
-          uv run python training/build_dataset.py --output /tmp/autocite-slm.jsonl
-          uv run python training/evaluate_slm.py --safety-file evals/slm_safety.jsonl
+      - run: uv run python training/build_dataset.py --output /tmp/autocite-slm.jsonl
+      - run: uv run python training/evaluate_slm.py --safety-file evals/slm_safety.jsonl
       - run: uv build
       - name: Verify distribution boundaries
         run: |
@@ -42,10 +48,3 @@ jobs:
           assert not any("The_Bluebook" in name for name in names)
           print(f"verified {wheel}")
           PY
-      - name: Upload pytest results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: pytest-results-${{ matrix.python-version }}
-          path: pytest-results.xml
-          if-no-files-found: warn
