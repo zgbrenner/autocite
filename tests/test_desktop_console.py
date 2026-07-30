@@ -31,3 +31,16 @@ def test_preservation_self_test_command_returns_machine_readable_result(
     output = json.loads(capsys.readouterr().out)
     assert output["status"] == "ok"
     assert output["preservation_mode"] == "original_docx"
+
+
+def test_normal_launch_uses_the_review_workspace(monkeypatch):
+    calls: list[tuple[str, ...]] = []
+
+    def fake_workspace(argv):
+        calls.append(tuple(argv))
+        return 23
+
+    monkeypatch.setattr(desktop_entry, "run_review_workspace", fake_workspace)
+
+    assert desktop_entry.run([]) == 23
+    assert calls == [()]
