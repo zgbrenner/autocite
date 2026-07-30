@@ -16,7 +16,7 @@ from .desktop import (
     build_desktop_report,
 )
 from .desktop_export import build_desktop_docx_export
-from .review_session import ReviewDecision, ReviewSession
+from .review_session import ReviewDecision, ReviewItemKind, ReviewSession
 from .tools import export_review_docx
 
 
@@ -169,7 +169,53 @@ class PreservationDesktopReviewController(DesktopReviewController):
         target = self._validate_destination(state, destination, ".json")
         report = build_desktop_report(state)
         session = self._session_with_decisions(state, decisions)
+        plan = session.export_plan()
+
+        accepted = sum(
+            item.decision is ReviewDecision.ACCEPTED for item in session.items
+        )
+        rejected = sum(
+            item.decision is ReviewDecision.REJECTED for item in session.items
+        )
+        pending = sum(
+            item.decision is ReviewDecision.PENDING for item in session.items
+        )
+        unsupported = sum(
+            item.correction_level == "unsupported" for item in session.items
+        )
+        review_items = sum(
+            item.kind is ReviewItemKind.ANNOTATION
+            and (
+                item.decision is not ReviewDecision.ACCEPTED
+                or item.correction_level == "unsupported"
+            )
+            for item in session.items
+        )
+
+        summary = report.get("summary")
+        summary = dict(summary) if isinstance(summary, dict) else {}
+        summary.update(
+            {
+                "applied_edits": len(plan.text_edits),
+                "review_items": review_items,
+                "unsupported_items": unsupported,
+                "remaining_mechanical_issues": len(plan.annotations),
+                "mechanical_review_complete": not plan.annotations,
+            }
+        )
+        report["summary"] = summary
+        report["applied_edits"] = [item.as_dict() for item in plan.text_edits]
         report["review_session"] = session.as_dict()
+        report["export_plan"] = plan.as_dict()
+        report["decision_summary"] = {
+            "total": len(session.items),
+            "accepted": accepted,
+            "rejected": rejected,
+            "pending": pending,
+            "accepted_text_edits": len(plan.text_edits),
+            "unresolved_export_annotations": len(plan.annotations),
+            "unsupported": unsupported,
+        }
         if isinstance(state, PreservationDesktopReviewState):
             report["docx_preservation"] = {
                 "ready": state.source_bytes is not None,
