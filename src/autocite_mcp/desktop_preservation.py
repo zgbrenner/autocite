@@ -4,6 +4,7 @@ import asyncio
 import base64
 import hashlib
 import json
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -166,3 +167,59 @@ class PreservationDesktopReviewController(DesktopReviewController):
         ).encode("utf-8")
         _atomic_write(target, payload)
         return {"path": str(target), "size_bytes": len(payload)}
+
+
+async def run_preservation_self_test() -> dict[str, Any]:
+    """Exercise review, original-DOCX mutation, package validation, and fidelity."""
+
+    from docx import Document
+
+    with tempfile.TemporaryDirectory(prefix="autocite-preservation-self-test-") as directory:
+        root = Path(directory)
+        source = root / "preservation-self-test.docx"
+        document = Document()
+        document.sections[0].header.paragraphs[0].text = "AutoCite Self-Test"
+        document.add_paragraph("See 42 USC §1983.")
+        table = document.add_table(rows=1, cols=2)
+        table.cell(0, 0).text = "Structure"
+        table.cell(0, 1).text = "Preserved"
+        document.save(source)
+        original_hash = hashlib.sha256(source.read_bytes()).hexdigest()
+
+        controller = PreservationDesktopReviewController()
+        state = await controller.review_file(source, mode="bluepages")
+        if state.error_code or state.result is None:
+            raise RuntimeError(state.error_message or "preservation self-test review failed")
+        if state.source_bytes is None:
+            raise RuntimeError(
+                state.preservation_warning
+                or "preservation self-test did not retain the original DOCX"
+            )
+        destination = root / "preservation-self-test-review.docx"
+        metadata = controller.export_docx(state, destination)
+        if metadata.get("preservation_mode") != "original_docx":
+            raise RuntimeError("preservation self-test used a reconstruction fallback")
+        if not destination.is_file() or destination.stat().st_size <= 0:
+            raise RuntimeError("preservation self-test export was not created")
+
+        reviewed = Document(destination)
+        header_preserved = (
+            reviewed.sections[0].header.paragraphs[0].text == "AutoCite Self-Test"
+        )
+        table_preserved = (
+            bool(reviewed.tables)
+            and reviewed.tables[0].cell(0, 0).text == "Structure"
+            and reviewed.tables[0].cell(0, 1).text == "Preserved"
+        )
+        source_unchanged = hashlib.sha256(source.read_bytes()).hexdigest() == original_hash
+        if not header_preserved or not table_preserved or not source_unchanged:
+            raise RuntimeError("preservation self-test detected a fidelity or source mutation failure")
+        return {
+            "status": "ok",
+            "preservation_mode": "original_docx",
+            "source_unchanged": source_unchanged,
+            "header_preserved": header_preserved,
+            "table_preserved": table_preserved,
+            "applied_edit_count": int(metadata.get("applied_edit_count", 0)),
+            "export_size_bytes": destination.stat().st_size,
+        }
