@@ -21,8 +21,19 @@ jobs:
         with:
           python-version: "3.12"
       - run: uv sync --extra dev
-      - run: uv run ruff check src/autocite_mcp/desktop.py scripts/package_desktop.py tests/test_desktop.py tests/test_package_desktop.py
-      - run: uv run pytest tests/test_desktop.py tests/test_package_desktop.py
+      - run: >-
+          uv run ruff check
+          src/autocite_mcp/desktop.py
+          src/autocite_mcp/desktop_entry.py
+          scripts/package_desktop.py
+          tests/test_desktop.py
+          tests/test_desktop_console.py
+          tests/test_package_desktop.py
+      - run: >-
+          uv run pytest
+          tests/test_desktop.py
+          tests/test_desktop_console.py
+          tests/test_package_desktop.py
 
   build:
     needs: verify
@@ -46,12 +57,22 @@ jobs:
         with:
           python-version: "3.12"
       - run: uv sync --extra desktop-build
+      - name: Read and validate package version
+        shell: bash
+        run: |
+          VERSION=$(uv run python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          if [[ "$GITHUB_REF" == refs/tags/* && "$GITHUB_REF_NAME" != "v$VERSION" ]]; then
+            echo "Tag $GITHUB_REF_NAME does not match pyproject version $VERSION" >&2
+            exit 1
+          fi
       - run: uv run pyinstaller packaging/autocite-desktop.spec --clean --noconfirm
       - name: Run packaged self-test on Windows
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $process = Start-Process -FilePath "${{ matrix.executable }}" -ArgumentList "--self-test" -Wait -PassThru
+          $executable = (Resolve-Path "${{ matrix.executable }}").Path
+          $process = Start-Process -FilePath $executable -ArgumentList "--self-test" -Wait -PassThru
           if ($process.ExitCode -ne 0) {
             throw "Packaged AutoCite self-test failed with exit code $($process.ExitCode)"
           }
@@ -65,8 +86,8 @@ jobs:
             --dist dist/AutoCite \
             --output release \
             --platform "${{ matrix.platform }}" \
-            --version "${GITHUB_REF_NAME#v}" \
-            --commit "${GITHUB_SHA}" \
+            --version "$VERSION" \
+            --commit "$GITHUB_SHA" \
             --start-here packaging/START-HERE.txt \
             --license LICENSE
       - uses: actions/upload-artifact@v4
