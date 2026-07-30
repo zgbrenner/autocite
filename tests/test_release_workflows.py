@@ -12,6 +12,7 @@ def test_desktop_release_requires_test_build_smoke_and_checksum_stages():
         "verify:",
         "build-desktop:",
         "--self-test",
+        "--self-test-preservation",
         "Verify release checksums and manifests",
         "Create immutable version tag",
     ):
