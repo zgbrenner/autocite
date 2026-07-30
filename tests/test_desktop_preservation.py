@@ -81,7 +81,13 @@ async def test_audit_report_uses_current_review_decisions(tmp_path: Path):
     controller = PreservationDesktopReviewController()
     state = await controller.review_file(source, mode="bluepages")
     assert state.review_session is not None
-    item_id = state.review_session.items[0].item_id
+    initial_accepted = [
+        item
+        for item in state.review_session.items
+        if item.decision is ReviewDecision.ACCEPTED
+    ]
+    assert initial_accepted
+    item_id = initial_accepted[0].item_id
 
     destination = tmp_path / "review.json"
     controller.export_json_report(
@@ -95,6 +101,17 @@ async def test_audit_report_uses_current_review_decisions(tmp_path: Path):
         item["item_id"] == item_id and item["decision"] == "rejected"
         for item in report["review_session"]["items"]
     )
+    assert report["decision_summary"]["rejected"] == 1
+    assert report["decision_summary"]["accepted_text_edits"] == len(initial_accepted) - 1
+    assert report["summary"]["applied_edits"] == len(initial_accepted) - 1
+    assert len(report["applied_edits"]) == len(initial_accepted) - 1
+    assert all(edit["item_id"] != item_id for edit in report["export_plan"]["text_edits"])
+    assert any(
+        annotation["item_id"] == item_id
+        and annotation["decision"] == "rejected"
+        for annotation in report["export_plan"]["annotations"]
+    )
+    assert report["summary"]["mechanical_review_complete"] is False
 
 
 async def test_non_docx_desktop_export_remains_a_labeled_fallback(tmp_path: Path):
