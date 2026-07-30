@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import copy
 from datetime import datetime, timezone
-from typing import Iterable, Sequence
+from typing import Iterable, Mapping, Sequence
 
 from lxml import etree
 
@@ -29,13 +29,23 @@ def _clone_run_properties(run: etree._Element) -> etree._Element | None:
     return copy.deepcopy(properties) if properties is not None else None
 
 
+def _clone_run_attributes(run: etree._Element) -> dict[str, str]:
+    """Retain Word run metadata when one run becomes multiple revision runs."""
+
+    return {str(name): str(value) for name, value in run.attrib.items()}
+
+
 def _set_space_preserve(node: etree._Element, value: str) -> None:
     if value[:1].isspace() or value[-1:].isspace():
         node.set(f"{{{XML_NS}}}space", "preserve")
 
 
-def _plain_run(value: str, run_properties: etree._Element | None) -> etree._Element:
-    run = etree.Element(f"{W}r")
+def _plain_run(
+    value: str,
+    run_properties: etree._Element | None,
+    run_attributes: Mapping[str, str],
+) -> etree._Element:
+    run = etree.Element(f"{W}r", attrib=dict(run_attributes))
     if run_properties is not None:
         run.append(copy.deepcopy(run_properties))
     text = etree.SubElement(run, f"{W}t")
@@ -48,6 +58,7 @@ def _revision(
     tag: str,
     value: str,
     run_properties: etree._Element | None,
+    run_attributes: Mapping[str, str],
     revision_id: int,
     timestamp: str,
 ) -> etree._Element:
@@ -55,7 +66,11 @@ def _revision(
     revision.set(f"{W}id", str(revision_id))
     revision.set(f"{W}author", "AutoCite")
     revision.set(f"{W}date", timestamp)
-    run = etree.SubElement(revision, f"{W}r")
+    run = etree.SubElement(
+        revision,
+        f"{W}r",
+        attrib=dict(run_attributes),
+    )
     if run_properties is not None:
         run.append(copy.deepcopy(run_properties))
     text_tag = "delText" if tag == "del" else "t"
@@ -65,7 +80,10 @@ def _revision(
     return revision
 
 
-def _max_numeric_attribute(roots: Iterable[etree._Element], attribute: str) -> int:
+def _max_numeric_attribute(
+    roots: Iterable[etree._Element],
+    attribute: str,
+) -> int:
     maximum = 0
     for root in roots:
         for node in root.iter():
@@ -88,7 +106,9 @@ def _replace_run_with_edits(
 ) -> int:
     node = location.node
     if node is None:
-        raise DocxMappingError("accepted edit has no mapped Word text node")
+        raise DocxMappingError(
+            "accepted edit has no mapped Word text node"
+        )
     run = node.getparent()
     parent = run.getparent() if run is not None else None
     if (
@@ -105,7 +125,9 @@ def _replace_run_with_edits(
     cursor = 0
     for _, start, end in ordered:
         if start < cursor:
-            raise DocxMappingError("accepted edits overlap inside one Word text node")
+            raise DocxMappingError(
+                "accepted edits overlap inside one Word text node"
+            )
         cursor = end
     if not tracked:
         output: list[str] = []
@@ -127,30 +149,47 @@ def _replace_run_with_edits(
             "tracked replacements containing tabs or line breaks are not supported"
         )
     properties = _clone_run_properties(run)
+    attributes = _clone_run_attributes(run)
     replacement_nodes: list[etree._Element] = []
     cursor = 0
     timestamp = datetime.now(timezone.utc).isoformat()
     for edit, start, end in ordered:
         prefix = original[cursor:start]
         if prefix:
-            replacement_nodes.append(_plain_run(prefix, properties))
+            replacement_nodes.append(
+                _plain_run(prefix, properties, attributes)
+            )
         deleted = original[start:end]
         if deleted:
             replacement_nodes.append(
-                _revision("del", deleted, properties, next_revision_id, timestamp)
+                _revision(
+                    "del",
+                    deleted,
+                    properties,
+                    attributes,
+                    next_revision_id,
+                    timestamp,
+                )
             )
             next_revision_id += 1
         if edit.replacement:
             replacement_nodes.append(
                 _revision(
-                    "ins", edit.replacement, properties, next_revision_id, timestamp
+                    "ins",
+                    edit.replacement,
+                    properties,
+                    attributes,
+                    next_revision_id,
+                    timestamp,
                 )
             )
             next_revision_id += 1
         cursor = end
     suffix = original[cursor:]
     if suffix:
-        replacement_nodes.append(_plain_run(suffix, properties))
+        replacement_nodes.append(
+            _plain_run(suffix, properties, attributes)
+        )
     position = parent.index(run)
     parent.remove(run)
     for offset, replacement in enumerate(replacement_nodes):
@@ -177,11 +216,19 @@ def _anchor_comment(
 ) -> None:
     node = location.node
     if node is None:
-        raise DocxMappingError("annotation has no mapped Word text node")
+        raise DocxMappingError(
+            "annotation has no mapped Word text node"
+        )
     run = node.getparent()
     parent = run.getparent() if run is not None else None
-    if run is None or parent is None or _local_name(parent) != "p":
-        raise DocxMappingError("annotation cannot be mapped to a simple Word paragraph")
+    if (
+        run is None
+        or parent is None
+        or _local_name(parent) != "p"
+    ):
+        raise DocxMappingError(
+            "annotation cannot be mapped to a simple Word paragraph"
+        )
     original = location.public.text
     prefix = original[:local_start]
     target = original[local_start:local_end]
@@ -189,19 +236,20 @@ def _anchor_comment(
     if not target:
         raise DocxMappingError("annotation target is empty")
     properties = _clone_run_properties(run)
+    attributes = _clone_run_attributes(run)
     nodes: list[etree._Element] = []
     if prefix:
-        nodes.append(_plain_run(prefix, properties))
+        nodes.append(_plain_run(prefix, properties, attributes))
     start_node = etree.Element(f"{W}commentRangeStart")
     start_node.set(f"{W}id", str(comment_id))
     nodes.append(start_node)
-    nodes.append(_plain_run(target, properties))
+    nodes.append(_plain_run(target, properties, attributes))
     end_node = etree.Element(f"{W}commentRangeEnd")
     end_node.set(f"{W}id", str(comment_id))
     nodes.append(end_node)
     nodes.append(_comment_reference_run(comment_id))
     if suffix:
-        nodes.append(_plain_run(suffix, properties))
+        nodes.append(_plain_run(suffix, properties, attributes))
     position = parent.index(run)
     parent.remove(run)
     for offset, replacement in enumerate(nodes):
@@ -209,7 +257,10 @@ def _anchor_comment(
 
 
 def _next_relationship_id(root: etree._Element) -> str:
-    used = {node.attrib.get("Id", "") for node in root.findall(f"{REL}Relationship")}
+    used = {
+        node.attrib.get("Id", "")
+        for node in root.findall(f"{REL}Relationship")
+    }
     number = 1
     while f"rId{number}" in used:
         number += 1
@@ -223,14 +274,20 @@ def _ensure_comments_support(
     comments_name = "word/comments.xml"
     comments_root = indexed.roots.get(comments_name)
     if comments_root is None:
-        comments_root = etree.Element(f"{W}comments", nsmap={"w": W_NS})
+        comments_root = etree.Element(
+            f"{W}comments",
+            nsmap={"w": W_NS},
+        )
         indexed.roots[comments_name] = comments_root
         modified.add(comments_name)
 
     rels_name = "word/_rels/document.xml.rels"
     rels_root = indexed.roots.get(rels_name)
     if rels_root is None:
-        rels_root = etree.Element(f"{REL}Relationships", nsmap={None: PKG_REL_NS})
+        rels_root = etree.Element(
+            f"{REL}Relationships",
+            nsmap={None: PKG_REL_NS},
+        )
         indexed.roots[rels_name] = rels_root
         modified.add(rels_name)
     has_comments_relationship = any(
@@ -238,7 +295,10 @@ def _ensure_comments_support(
         for node in rels_root.findall(f"{REL}Relationship")
     )
     if not has_comments_relationship:
-        relationship = etree.SubElement(rels_root, f"{REL}Relationship")
+        relationship = etree.SubElement(
+            rels_root,
+            f"{REL}Relationship",
+        )
         relationship.set("Id", _next_relationship_id(rels_root))
         relationship.set("Type", COMMENTS_REL_TYPE)
         relationship.set("Target", "comments.xml")
@@ -251,7 +311,10 @@ def _ensure_comments_support(
         for node in content_types.findall(f"{CT}Override")
     )
     if not has_override:
-        override = etree.SubElement(content_types, f"{CT}Override")
+        override = etree.SubElement(
+            content_types,
+            f"{CT}Override",
+        )
         override.set("PartName", "/word/comments.xml")
         override.set("ContentType", COMMENTS_CONTENT_TYPE)
         modified.add(content_types_name)
@@ -263,7 +326,11 @@ def _ensure_comments_support(
             existing_ids.append(int(raw))
         except (TypeError, ValueError):
             continue
-    return comments_root, max(existing_ids, default=-1) + 1, modified
+    return (
+        comments_root,
+        max(existing_ids, default=-1) + 1,
+        modified,
+    )
 
 
 def _append_comment(
@@ -275,17 +342,25 @@ def _append_comment(
     comment = etree.SubElement(comments_root, f"{W}comment")
     comment.set(f"{W}id", str(comment_id))
     comment.set(f"{W}author", "AutoCite")
-    comment.set(f"{W}date", datetime.now(timezone.utc).isoformat())
+    comment.set(
+        f"{W}date",
+        datetime.now(timezone.utc).isoformat(),
+    )
     paragraph = etree.SubElement(comment, f"{W}p")
     run = etree.SubElement(paragraph, f"{W}r")
     text = etree.SubElement(run, f"{W}t")
     details = [f"{annotation.code}: {annotation.message}"]
     details.append(
-        f"Status: {annotation.correction_level}; confidence: {annotation.confidence}."
+        f"Status: {annotation.correction_level}; "
+        f"confidence: {annotation.confidence}."
     )
     if annotation.rule:
         details.append(f"Rule family: {annotation.rule}.")
     if annotation.missing_facts:
-        details.append("Missing facts: " + ", ".join(annotation.missing_facts) + ".")
+        details.append(
+            "Missing facts: "
+            + ", ".join(annotation.missing_facts)
+            + "."
+        )
     details.append(f"Provenance: {annotation.provenance}.")
     text.text = " ".join(details)
