@@ -1,14 +1,33 @@
 from __future__ import annotations
 
+import json
 import sys
 
-from autocite_mcp.desktop_entry import run
+import autocite_mcp.desktop_entry as desktop_entry
 
 
 def test_version_command_succeeds_without_console_streams(monkeypatch):
     monkeypatch.setattr(sys, "stdout", None)
     monkeypatch.setattr(sys, "stderr", None)
 
-    assert run(["--version"]) == 0
+    assert desktop_entry.run(["--version"]) == 0
     assert sys.stdout is not None
     assert sys.stderr is not None
+
+
+def test_preservation_self_test_command_returns_machine_readable_result(
+    monkeypatch, capsys
+):
+    async def fake_self_test():
+        return {
+            "status": "ok",
+            "preservation_mode": "original_docx",
+            "source_unchanged": True,
+        }
+
+    monkeypatch.setattr(desktop_entry, "run_preservation_self_test", fake_self_test)
+
+    assert desktop_entry.run(["--self-test-preservation"]) == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output["status"] == "ok"
+    assert output["preservation_mode"] == "original_docx"
