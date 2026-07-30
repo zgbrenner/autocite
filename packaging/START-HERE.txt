@@ -1,0 +1,76 @@
+AUTOCITE DESKTOP
+================
+
+AutoCite is a local legal-citation reviewer. Standard review works without
+Python, an installer, administrator access, a dedicated GPU, model downloads,
+or an internet connection.
+
+START IN THREE STEPS
+--------------------
+1. Extract the entire ZIP file. Do not run AutoCite from inside the ZIP.
+2. Open the extracted AutoCite folder.
+3. Double-click AutoCite.exe on Windows, or the AutoCite executable on macOS or Linux.
+
+Choose or drag in a TXT, Markdown, DOCX, or searchable PDF document. AutoCite
+recommends Bluepages or Whitepages, applies only high-confidence safe mechanical
+changes by default, and shows everything that still needs human review.
+
+REVIEW EACH ITEM
+----------------
+- Accepted safe changes appear in the corrected preview and reviewed export.
+- Pending findings remain in the review record.
+- Rejected changes are not applied and the decision remains documented.
+- Use Accept all safe changes only for high-confidence mechanical edits.
+- Undo, redo, filters, search, and Previous or Next help work through the list.
+
+FOR AN 8 GB WINDOWS LAPTOP
+--------------------------
+Keep "Standard local review (recommended)" selected. This is the complete
+built-in deterministic reviewer and does not require the optional 0.8B model.
+Closing memory-heavy applications can help with unusually large documents.
+
+SAVING RESULTS
+--------------
+- "Save reviewed Word document" uses your current accept, pending, and reject decisions.
+- For a DOCX source, AutoCite edits a copy of the original Word package, preserves
+  untouched structure, and uses tracked changes for supported mapped edits.
+- Review findings become Word comments when AutoCite can anchor them safely.
+- Findings that cannot be anchored safely remain in the JSON audit report.
+- TXT, Markdown, and PDF sources use a clearly labeled text-level Word export.
+- "Save audit report" records every review item, stable ID, decision, provenance,
+  document fingerprint, preservation status, and accuracy boundary.
+- AutoCite refuses to overwrite the source document and writes exports atomically.
+
+DOCX SAFETY
+-----------
+AutoCite refuses an accepted edit that cannot be mapped unambiguously to a safe
+Word text range. It does not force changes through fields, hyperlinks, existing
+tracked-change boundaries, multiple package parts, or other protected Word
+structures. Review the current file again if AutoCite reports that the DOCX
+changed after analysis.
+
+IMPORTANT LIMITS
+----------------
+AutoCite reviews supported citation mechanics. It does not determine whether an
+authority is good law, controlling, or supportive of a legal proposition. It
+does not replace current local rules, journal rules, official source review, or
+professional legal judgment.
+
+PDF NOTE
+--------
+A PDF must contain selectable text. If AutoCite reports that OCR is required,
+create a searchable PDF first and review that copy.
+
+WINDOWS SECURITY NOTICE
+-----------------------
+The portable build is not an installer and may be unsigned. Windows can display
+a reputation warning for newly released unsigned applications. Download only
+from this repository's official GitHub Release and compare the ZIP with its
+matching .sha256 file when authenticity matters.
+
+PRIVACY
+-------
+Standard review is processed locally. AutoCite has no telemetry and does not
+modify the original file. Network-based CourtListener review is not enabled in
+this portable desktop workflow. Original DOCX bytes are kept only in memory for
+the active review and are never placed in settings or audit reports.

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "autocite-mcp"
-version = "0.5.0"
+version = "0.6.0"
 description = "Evidence-backed Bluepages and Whitepages legal citation reviewer with document workflows, jurisdiction profiles, and MCP workspace support."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -26,6 +26,7 @@ dependencies = [
   "httpx>=0.27,<1",
   "eyecite>=2.7.8,<3",
   "beautifulsoup4>=4.12,<5",
+  "lxml>=5,<7",
   "python-docx>=1.1,<2",
   "pypdf>=5,<7",
 ]
@@ -61,7 +62,8 @@ dev = [
 [project.scripts]
 autocite-mcp = "autocite_mcp.hosting:main"
 autocite = "autocite_mcp.cli:main"
-autocite-desktop = "autocite_mcp.desktop:main"
+autocite-desktop = "autocite_mcp.desktop_entry:run"
+autocite-eval-real = "autocite_mcp.real_document_eval:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/autocite_mcp"]

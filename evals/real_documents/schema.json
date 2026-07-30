@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/zgbrenner/autocite/evals/real_documents/schema.json",
+  "title": "AutoCite permissioned real-document manifest row",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "document_id",
+    "relative_path",
+    "split",
+    "permission",
+    "expected"
+  ],
+  "properties": {
+    "document_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9._-]+$"
+    },
+    "relative_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "split": {
+      "enum": ["train", "dev", "test", "holdout"]
+    },
+    "permission": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["basis"],
+      "properties": {
+        "basis": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reviewed_by": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "mode": {
+      "enum": ["auto", "bluepages", "whitepages"],
+      "default": "auto"
+    },
+    "document_type": {
+      "type": "string",
+      "default": "auto"
+    },
+    "jurisdiction": {
+      "type": ["string", "null"]
+    },
+    "expected": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["citations", "issue_codes"],
+      "properties": {
+        "citations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["text", "start", "end", "source_type"],
+            "properties": {
+              "text": {"type": "string"},
+              "start": {"type": "integer", "minimum": 0},
+              "end": {"type": "integer", "minimum": 1},
+              "source_type": {"type": "string", "minLength": 1}
+            }
+          }
+        },
+        "issue_codes": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "uniqueItems": true
+        },
+        "safe_fixed_text": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
