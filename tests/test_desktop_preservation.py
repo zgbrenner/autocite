@@ -8,6 +8,7 @@ from docx import Document
 from autocite_mcp.desktop_preservation import (
     PreservationDesktopReviewController,
     PreservationDesktopReviewState,
+    run_preservation_self_test,
 )
 
 
@@ -51,6 +52,17 @@ async def test_non_docx_desktop_export_remains_a_labeled_fallback(tmp_path: Path
 
     assert destination.is_file()
     assert metadata["preservation_mode"] == "reconstructed_text"
+
+
+async def test_preservation_self_test_exercises_original_docx_export():
+    result = await run_preservation_self_test()
+
+    assert result["status"] == "ok"
+    assert result["preservation_mode"] == "original_docx"
+    assert result["source_unchanged"] is True
+    assert result["header_preserved"] is True
+    assert result["table_preserved"] is True
+    assert result["export_size_bytes"] > 0
 
 
 def test_preserved_state_repr_does_not_expose_source_bytes():
