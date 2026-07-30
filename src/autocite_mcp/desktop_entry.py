@@ -5,7 +5,8 @@ import sys
 from collections.abc import Sequence
 from typing import TextIO
 
-from .desktop import main as desktop_main
+from . import desktop as desktop_module
+from .desktop_preservation import PreservationDesktopReviewController
 
 
 def _writable_null_stream() -> TextIO:
@@ -27,7 +28,11 @@ def ensure_console_streams() -> None:
 
 def run(argv: Sequence[str] | None = None) -> int:
     ensure_console_streams()
-    return desktop_main(argv)
+    # The existing desktop UI resolves this controller from its module globals
+    # when a window or packaged self-test starts. Replacing it here upgrades both
+    # paths without duplicating the UI or the deterministic review workflow.
+    desktop_module.DesktopReviewController = PreservationDesktopReviewController
+    return desktop_module.main(argv)
 
 
 if __name__ == "__main__":
