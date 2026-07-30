@@ -1,11 +1,15 @@
-name: Release
+name: Python release
 
 on:
   release:
     types: [published]
-
-permissions:
-  contents: read
+  workflow_dispatch:
+    inputs:
+      publish_pypi:
+        description: Publish the verified distributions to PyPI
+        required: true
+        default: false
+        type: boolean
 
 jobs:
   build:
@@ -16,15 +20,37 @@ jobs:
         with:
           python-version: "3.12"
       - run: uv sync --extra dev
-      - run: uv run ruff check src tests
+      - run: uv run ruff check src tests training
       - run: uv run pytest
+      - run: uv run python -m compileall -q src/autocite_mcp training
+      - run: uv run autocite eval --file evals/gold.jsonl
       - run: uv build
       - uses: actions/upload-artifact@v4
         with:
           name: python-package-distributions
           path: dist/
+          if-no-files-found: error
+
+  attach-to-release:
+    if: github.event_name == 'release'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+      - name: Attach wheel and source distribution
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+          REPOSITORY: ${{ github.repository }}
+        run: gh release upload "$TAG" dist/* --repo "$REPOSITORY" --clobber
 
   publish-pypi:
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_pypi
     needs: build
     runs-on: ubuntu-latest
     environment:
