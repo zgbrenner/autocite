@@ -12,6 +12,7 @@ from .desktop_preservation import (
     PreservationDesktopReviewController,
     run_preservation_self_test,
 )
+from .desktop_review_ui import run_review_workspace
 
 
 def _writable_null_stream() -> TextIO:
@@ -33,9 +34,8 @@ def ensure_console_streams() -> None:
 
 def run(argv: Sequence[str] | None = None) -> int:
     ensure_console_streams()
-    # The existing desktop UI resolves this controller from its module globals
-    # when a window or packaged self-test starts. Replacing it here upgrades both
-    # paths without duplicating the UI or the deterministic review workflow.
+    # The legacy command path resolves this controller from its module globals.
+    # The interactive workspace imports the preservation controller directly.
     desktop_module.DesktopReviewController = PreservationDesktopReviewController
     arguments = list(sys.argv[1:] if argv is None else argv)
     if "--self-test-preservation" in arguments:
@@ -46,7 +46,9 @@ def run(argv: Sequence[str] | None = None) -> int:
             return 1
         print(json.dumps(result, sort_keys=True))
         return 0
-    return desktop_module.main(arguments)
+    if "--version" in arguments or "--self-test" in arguments:
+        return desktop_module.main(arguments)
+    return run_review_workspace(arguments)
 
 
 if __name__ == "__main__":
