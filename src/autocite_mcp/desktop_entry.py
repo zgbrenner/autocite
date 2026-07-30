@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import asyncio
+import json
 import os
 import sys
 from collections.abc import Sequence
 from typing import TextIO
 
 from . import desktop as desktop_module
-from .desktop_preservation import PreservationDesktopReviewController
+from .desktop_preservation import (
+    PreservationDesktopReviewController,
+    run_preservation_self_test,
+)
 
 
 def _writable_null_stream() -> TextIO:
@@ -32,7 +37,16 @@ def run(argv: Sequence[str] | None = None) -> int:
     # when a window or packaged self-test starts. Replacing it here upgrades both
     # paths without duplicating the UI or the deterministic review workflow.
     desktop_module.DesktopReviewController = PreservationDesktopReviewController
-    return desktop_module.main(argv)
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    if "--self-test-preservation" in arguments:
+        try:
+            result = asyncio.run(run_preservation_self_test())
+        except Exception as exc:
+            print(f"AutoCite preservation self-test failed: {exc}", file=sys.stderr)
+            return 1
+        print(json.dumps(result, sort_keys=True))
+        return 0
+    return desktop_module.main(arguments)
 
 
 if __name__ == "__main__":
