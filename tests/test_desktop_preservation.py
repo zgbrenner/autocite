@@ -43,6 +43,39 @@ async def test_preservation_controller_retains_original_docx_structure(tmp_path:
     assert reviewed.tables[0].cell(0, 1).text == "ECF 12"
 
 
+async def test_changed_docx_discards_review_and_requires_retry(
+    tmp_path: Path, monkeypatch
+):
+    source = tmp_path / "brief.docx"
+    document = Document()
+    document.add_paragraph("See 42 USC §1983.")
+    document.save(source)
+    original = source.read_bytes()
+    real_read_bytes = Path.read_bytes
+    source_reads = 0
+
+    def changing_read_bytes(path: Path) -> bytes:
+        nonlocal source_reads
+        if path == source:
+            source_reads += 1
+            return original if source_reads == 1 else original + b"changed"
+        return real_read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", changing_read_bytes)
+
+    state = await PreservationDesktopReviewController().review_file(
+        source, mode="bluepages"
+    )
+
+    assert source_reads == 2
+    assert state.error_code == "docx_preservation_unavailable"
+    assert state.result is None
+    assert state.review_session is None
+    assert state.source_bytes is None
+    assert "review was discarded" in (state.error_message or "").lower()
+    assert "review the current file again" in (state.error_message or "").lower()
+
+
 async def test_desktop_export_applies_current_review_decisions(tmp_path: Path):
     source = tmp_path / "brief.docx"
     document = Document()
