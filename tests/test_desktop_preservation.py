@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 
 from docx import Document
@@ -10,6 +11,7 @@ from autocite_mcp.desktop_preservation import (
     PreservationDesktopReviewState,
     run_preservation_self_test,
 )
+from autocite_mcp.review_session import ReviewDecision
 
 
 async def test_preservation_controller_retains_original_docx_structure(tmp_path: Path):
@@ -39,6 +41,60 @@ async def test_preservation_controller_retains_original_docx_structure(tmp_path:
     assert reviewed.sections[0].header.paragraphs[0].text == "Privileged Draft"
     assert reviewed.tables[0].cell(0, 0).text == "Record citation"
     assert reviewed.tables[0].cell(0, 1).text == "ECF 12"
+
+
+async def test_desktop_export_applies_current_review_decisions(tmp_path: Path):
+    source = tmp_path / "brief.docx"
+    document = Document()
+    document.add_paragraph("See 42 USC §1983.")
+    document.save(source)
+
+    controller = PreservationDesktopReviewController()
+    state = await controller.review_file(source, mode="bluepages")
+    assert state.review_session is not None
+    accepted = [
+        item
+        for item in state.review_session.items
+        if item.decision is ReviewDecision.ACCEPTED
+    ]
+    assert accepted
+    rejected_id = accepted[0].item_id
+
+    destination = tmp_path / "review.docx"
+    metadata = controller.export_docx(
+        state,
+        destination,
+        decisions={rejected_id: ReviewDecision.REJECTED},
+    )
+
+    exported_items = metadata["review_session"]["items"]
+    assert any(
+        item["item_id"] == rejected_id and item["decision"] == "rejected"
+        for item in exported_items
+    )
+    assert metadata["applied_edit_count"] == len(accepted) - 1
+
+
+async def test_audit_report_uses_current_review_decisions(tmp_path: Path):
+    source = tmp_path / "brief.txt"
+    source.write_text("See 42 USC §1983.", encoding="utf-8")
+    controller = PreservationDesktopReviewController()
+    state = await controller.review_file(source, mode="bluepages")
+    assert state.review_session is not None
+    item_id = state.review_session.items[0].item_id
+
+    destination = tmp_path / "review.json"
+    controller.export_json_report(
+        state,
+        destination,
+        decisions={item_id: ReviewDecision.REJECTED},
+    )
+    report = json.loads(destination.read_text(encoding="utf-8"))
+
+    assert any(
+        item["item_id"] == item_id and item["decision"] == "rejected"
+        for item in report["review_session"]["items"]
+    )
 
 
 async def test_non_docx_desktop_export_remains_a_labeled_fallback(tmp_path: Path):
