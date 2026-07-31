@@ -116,7 +116,9 @@ describe("AutoCite desktop workspace", () => {
     expect(screen.getByRole("tab", { name: "Review" })).toBeVisible();
     expect(screen.getByRole("textbox", { name: "Document editor" })).toBeVisible();
     expect(screen.getByRole("heading", { name: "AutoCite review" })).toBeVisible();
-    expect(screen.getByText("Motion to dismiss", { selector: "button" })).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: /Motion to dismiss/i }),
+    ).toBeVisible();
   });
 
   it("runs a review and persists an explicit reject decision", async () => {
