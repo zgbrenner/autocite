@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -132,11 +132,13 @@ describe("AutoCite desktop workspace", () => {
     expect(await screen.findByText("Use the standard code abbreviation.")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Reject suggestion" }));
 
-    expect(adapter.setReviewDecision).toHaveBeenCalledWith({
-      sessionId: "doc-1",
-      itemId: "issue-1",
-      decision: "rejected",
-      expectedRevision: 1,
+    await waitFor(() => {
+      expect(adapter.setReviewDecision).toHaveBeenCalledWith({
+        sessionId: "doc-1",
+        itemId: "issue-1",
+        decision: "rejected",
+        expectedRevision: 1,
+      });
     });
   });
 });
