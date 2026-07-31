@@ -1,10 +1,4 @@
-use std::{
-    fs,
-    net::TcpListener,
-    path::Path,
-    sync::Mutex,
-    time::Duration,
-};
+use std::{fs, net::TcpListener, path::Path, sync::Mutex, time::Duration};
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use reqwest::{Client, Method};
