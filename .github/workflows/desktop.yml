@@ -5,8 +5,11 @@ on:
     branches: [main]
     paths:
       - "desktop/**"
+      - "packaging/autocite-desktop.spec"
       - "packaging/autocite-sidecar.py"
       - "packaging/autocite-sidecar.spec"
+      - "packaging/START-HERE.txt"
+      - "scripts/package_desktop.py"
       - "scripts/package_tauri_release.py"
       - "src/autocite_mcp/**"
       - "tests/**"
@@ -78,9 +81,9 @@ jobs:
           PY
       - name: Lint complete repository
         run: uv run ruff check src tests training scripts
-      - name: Run complete Python and workflow contract suite
+      - name: Test complete repository
         run: uv run pytest --junitxml=pytest-results.xml
-      - name: Compile Python sources
+      - name: Compile complete repository
         run: uv run python -m compileall -q src/autocite_mcp training scripts
       - name: Evaluate deterministic gold corpus
         run: uv run autocite eval --file evals/gold.jsonl
@@ -115,7 +118,7 @@ jobs:
           retention-days: 14
 
   build-desktop:
-    name: Build ${{ matrix.platform }}
+    name: Build Tauri ${{ matrix.platform }}
     needs: verify
     runs-on: ${{ matrix.os }}
     timeout-minutes: 75
@@ -181,7 +184,7 @@ jobs:
             --noconfirm \
             --distpath sidecar-dist \
             --workpath "build/sidecar-$PLATFORM"
-      - name: Run packaged sidecar self-test
+      - name: Run packaged sidecar self-tests
         shell: bash
         run: |
           set -euo pipefail
@@ -191,17 +194,27 @@ jobs:
             SIDECAR="sidecar-dist/autocite-backend"
           fi
           "$SIDECAR" --self-test | tee sidecar-self-test.json
+          "$SIDECAR" --self-test-preservation | tee sidecar-preservation-self-test.json
           uv run python - <<'PY'
           import json
 
-          result = json.load(open("sidecar-self-test.json", encoding="utf-8"))
-          assert result == {
+          basic = json.load(open("sidecar-self-test.json", encoding="utf-8"))
+          preservation = json.load(
+              open("sidecar-preservation-self-test.json", encoding="utf-8")
+          )
+          assert basic == {
               "authenticated": True,
               "host": "127.0.0.1",
               "local_first": True,
               "status": "ok",
           }
-          print("packaged sidecar self-test verified")
+          assert preservation["status"] == "ok"
+          assert preservation["preservation_mode"] == "original_docx"
+          assert preservation["source_unchanged"] is True
+          assert preservation["header_preserved"] is True
+          assert preservation["table_preserved"] is True
+          assert preservation["export_size_bytes"] > 0
+          print("packaged sidecar self-tests verified")
           PY
       - name: Place target-named Tauri sidecar
         shell: bash
@@ -284,6 +297,194 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  build-portable:
+    name: Build portable fallback ${{ matrix.platform }}
+    needs: verify
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 55
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2025
+            platform: windows-x64
+            executable: portable-dist/AutoCite/AutoCite.exe
+          - os: macos-15-intel
+            platform: macos-x64
+            executable: portable-dist/AutoCite/AutoCite
+          - os: macos-15
+            platform: macos-arm64
+            executable: portable-dist/AutoCite/AutoCite
+          - os: ubuntu-24.04
+            platform: linux-x64
+            executable: portable-dist/AutoCite/AutoCite
+    env:
+      DESKTOP_VERSION: ${{ needs.verify.outputs.desktop-version }}
+      PLATFORM: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - name: Synchronize locked portable-build environment
+        run: uv sync --frozen --extra desktop-build
+      - name: Build installer-free compatibility application
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run pyinstaller packaging/autocite-desktop.spec \
+            --clean \
+            --noconfirm \
+            --distpath portable-dist \
+            --workpath "build/portable-$PLATFORM"
+      - name: Run packaged preservation smoke on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $executable = (Resolve-Path "${{ matrix.executable }}").Path
+          foreach ($argument in @("--self-test", "--self-test-preservation")) {
+            $process = Start-Process -FilePath $executable -ArgumentList $argument -Wait -PassThru
+            if ($process.ExitCode -ne 0) {
+              throw "Packaged AutoCite $argument failed with exit code $($process.ExitCode)"
+            }
+          }
+      - name: Run packaged preservation smoke on Unix
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          "${{ matrix.executable }}" --self-test
+          "${{ matrix.executable }}" --self-test-preservation
+      - name: Package installer-free portable archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run python scripts/package_desktop.py \
+            --dist portable-dist/AutoCite \
+            --output "portable-release/$PLATFORM" \
+            --platform "$PLATFORM" \
+            --version "$DESKTOP_VERSION" \
+            --commit "$GITHUB_SHA" \
+            --start-here packaging/START-HERE.txt \
+            --license LICENSE
+      - name: Upload portable fallback bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: AutoCite-portable-${{ matrix.platform }}
+          path: portable-release/${{ matrix.platform }}/*
+          if-no-files-found: error
+          retention-days: 14
+
+  verify-portable:
+    name: Verify portable archive safety
+    needs: build-portable
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Download portable archives
+        uses: actions/download-artifact@v8
+        with:
+          pattern: AutoCite-portable-*
+          path: portable-release
+          merge-multiple: true
+      - name: Verify release archives, checksums, and manifests
+        run: |
+          python - <<'PY'
+          import hashlib
+          import json
+          import re
+          import stat
+          import zipfile
+          from pathlib import Path, PurePosixPath
+
+          root = Path("portable-release")
+          expected_platforms = {
+              "windows-x64",
+              "macos-x64",
+              "macos-arm64",
+              "linux-x64",
+          }
+          device_name = re.compile(
+              r"^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$",
+              re.IGNORECASE,
+          )
+          archives = sorted(root.glob("AutoCite-*-v*.zip"))
+          assert len(archives) == len(expected_platforms), (
+              f"expected {len(expected_platforms)} portable archives, "
+              f"found {len(archives)}"
+          )
+          verified_platforms = set()
+
+          for archive in archives:
+              checksum = archive.with_suffix(archive.suffix + ".sha256")
+              manifest = archive.with_name(
+                  archive.name.removesuffix(".zip") + ".manifest.json"
+              )
+              assert checksum.is_file(), f"missing checksum for {archive.name}"
+              assert manifest.is_file(), f"missing manifest for {archive.name}"
+
+              expected_hash = checksum.read_text(encoding="utf-8").split()[0]
+              actual_hash = hashlib.sha256(archive.read_bytes()).hexdigest()
+              assert actual_hash == expected_hash, (
+                  f"checksum mismatch for {archive.name}"
+              )
+              metadata = json.loads(manifest.read_text(encoding="utf-8"))
+              platform = metadata["platform"]
+              assert platform in expected_platforms, f"unexpected platform {platform}"
+              verified_platforms.add(platform)
+              assert metadata["archive_sha256"] == actual_hash
+              assert metadata["portable"] is True
+              assert metadata["requires_installer"] is False
+              assert metadata["requires_python"] is False
+
+              seen = set()
+              with zipfile.ZipFile(archive) as bundle:
+                  for member in bundle.infolist():
+                      raw = member.filename.replace("\\", "/")
+                      path = PurePosixPath(raw)
+                      assert raw not in seen, f"duplicate archive member: {raw}"
+                      seen.add(raw)
+                      assert not path.is_absolute(), f"absolute archive path: {raw}"
+                      assert ".." not in path.parts, f"archive traversal path: {raw}"
+                      assert not raw.startswith(("//", "\\\\")), (
+                          f"device archive path: {raw}"
+                      )
+                      assert not any(
+                          part.endswith(":")
+                          or device_name.match(part.rstrip(". "))
+                          for part in path.parts
+                      ), f"unsafe Windows archive path: {raw}"
+                      mode = (member.external_attr >> 16) & 0o170000
+                      assert mode != stat.S_IFLNK, f"symlink archive member: {raw}"
+
+                  required = {
+                      "AutoCite/START HERE.txt",
+                      "AutoCite/LICENSE.txt",
+                      "AutoCite/BUILD-MANIFEST.json",
+                  }
+                  assert required <= seen, (
+                      f"missing required portable files in {archive.name}"
+                  )
+                  embedded = json.loads(
+                      bundle.read("AutoCite/BUILD-MANIFEST.json").decode("utf-8")
+                  )
+                  assert embedded["platform"] == platform
+                  assert embedded["portable"] is True
+                  assert embedded["requires_installer"] is False
+                  for item in embedded["files"]:
+                      member_name = f"AutoCite/{item['path']}"
+                      assert member_name in seen, (
+                          f"manifest references missing member {member_name}"
+                      )
+                      payload = bundle.read(member_name)
+                      assert len(payload) == item["size_bytes"]
+                      assert hashlib.sha256(payload).hexdigest() == item["sha256"]
+
+              print(f"verified {archive.name}")
+
+          assert verified_platforms == expected_platforms
+          PY
+
   build-python:
     name: Build Python package
     needs: verify
@@ -306,6 +507,7 @@ jobs:
           uv run python - <<'PY'
           import hashlib
           import json
+          import os
           import tomllib
           from pathlib import Path
 
@@ -326,8 +528,8 @@ jobs:
               "schema_version": 1,
               "product": "AutoCite Python",
               "version": version,
-              "commit": __import__("os").environ["GITHUB_SHA"],
-              "workflow_run_id": __import__("os").environ["GITHUB_RUN_ID"],
+              "commit": os.environ["GITHUB_SHA"],
+              "workflow_run_id": os.environ["GITHUB_RUN_ID"],
               "assets": assets,
           }
           (output / "AutoCite-python.manifest.json").write_text(
@@ -345,7 +547,7 @@ jobs:
   release:
     name: Publish attested desktop prerelease
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [verify, build-desktop, build-python]
+    needs: [verify, build-desktop, build-portable, verify-portable, build-python]
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     permissions:
@@ -425,6 +627,9 @@ jobs:
                   assert checksum.is_file(), f"missing {checksum.name}"
                   assert checksum.read_text(encoding="utf-8").split()[0] == digest
 
+              portable = sorted(root.glob(f"AutoCite-{platform}-v*.zip"))
+              assert len(portable) == 1, f"missing portable archive for {platform}"
+
           python_manifest = root / "AutoCite-python.manifest.json"
           assert python_manifest.is_file(), "missing Python release manifest"
           source_sbom = root / "AutoCite-source.sbom.spdx.json"
@@ -451,6 +656,7 @@ jobs:
               "commit": os.environ["GITHUB_SHA"],
               "workflow_run_id": os.environ["GITHUB_RUN_ID"],
               "platforms": sorted(expected_platforms),
+              "portable_fallbacks": True,
               "prerelease": True,
               "files": files,
           }
@@ -485,12 +691,12 @@ jobs:
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "SHORT_SHA=$SHORT_SHA" >> "$GITHUB_ENV"
           echo "TAG=$TAG" >> "$GITHUB_ENV"
-      - name: Create or verify immutable release tag
+      - name: Create or verify immutable version tag
         shell: bash
         run: |
           set -euo pipefail
           if git fetch origin "refs/tags/$TAG:refs/tags/$TAG" 2>/dev/null; then
-            EXISTING_COMMIT="$(git rev-list -n 1 "$TAG")"
+            EXISTING_COMMIT=$(git rev-list -n 1 "$TAG")
             if [[ "$EXISTING_COMMIT" != "$GITHUB_SHA" ]]; then
               echo "Tag $TAG points to $EXISTING_COMMIT, not $GITHUB_SHA." >&2
               exit 1
@@ -509,14 +715,14 @@ jobs:
           \`$GITHUB_SHA\`.
 
           Included assets:
-          - Windows x64 installers
-          - macOS Intel disk image
-          - macOS Apple Silicon disk image
-          - Linux x64 AppImage and Debian package
+          - Windows x64 installers and portable fallback
+          - macOS Intel disk image and portable fallback
+          - macOS Apple Silicon disk image and portable fallback
+          - Linux x64 AppImage, Debian package, and portable fallback
           - Python wheel and source distribution
           - SHA-256 checksums, provenance manifests, and SPDX SBOMs
 
-          The desktop binaries are unsigned prerelease artifacts. Verify downloads with \
+          The Tauri desktop binaries are unsigned prerelease artifacts. Verify downloads with \
           \`SHA256SUMS.txt\` and GitHub artifact attestations before use.
           EOF
       - name: Create or refresh GitHub prerelease
@@ -542,15 +748,19 @@ jobs:
   release-gate:
     name: Cross-platform release gate
     if: always() && github.event_name == 'pull_request'
-    needs: [verify, build-desktop, build-python]
+    needs: [verify, build-desktop, build-portable, verify-portable, build-python]
     runs-on: ubuntu-24.04
     steps:
       - name: Require verification and every platform build
         env:
           VERIFY: ${{ needs.verify.result }}
           DESKTOP: ${{ needs.build-desktop.result }}
+          PORTABLE: ${{ needs.build-portable.result }}
+          ARCHIVES: ${{ needs.verify-portable.result }}
           PYTHON: ${{ needs.build-python.result }}
         run: |
           test "$VERIFY" = success
           test "$DESKTOP" = success
+          test "$PORTABLE" = success
+          test "$ARCHIVES" = success
           test "$PYTHON" = success
