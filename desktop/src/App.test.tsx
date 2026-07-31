@@ -85,7 +85,7 @@ function createAdapter(): ApplicationAdapter {
           confidence: "high",
           correctionLevel: "safe_auto_fix",
           provenance: "deterministic_logic",
-          decision: "accepted",
+          decision: "accepted" as const,
         },
       ],
       offset: 0,
