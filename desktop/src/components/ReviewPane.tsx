@@ -124,7 +124,11 @@ export function ReviewPane({
               AutoCite checks citation form, short forms, source context, and safe
               mechanical corrections without rewriting your prose.
             </p>
-            <button type="button" onClick={onRunReview}>
+            <button
+              type="button"
+              aria-label="Start AutoCite review"
+              onClick={onRunReview}
+            >
               Run AutoCite review
             </button>
           </div>
