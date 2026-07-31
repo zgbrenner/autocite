@@ -42,10 +42,10 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: site/package-lock.json
-      - name: Install locked dependencies
-        run: npm ci --ignore-scripts --no-fund --no-audit
+      - name: Generate and install exact dependencies
+        run: |
+          npm install --package-lock-only --ignore-scripts --no-fund --no-audit
+          npm ci --ignore-scripts --no-fund --no-audit
       - name: Check Astro and TypeScript
         run: npm run lint
       - name: Run unit and contract tests
@@ -56,12 +56,13 @@ jobs:
         run: npm run audit:seo
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
-      - name: Upload static site and SEO report
+      - name: Upload static site, lockfile, and SEO report
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: site-dist
           path: |
+            site/package-lock.json
             site/dist
             site/reports
           if-no-files-found: error
@@ -79,9 +80,10 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: site/package-lock.json
-      - run: npm ci --ignore-scripts --no-fund --no-audit
+      - name: Generate and install exact dependencies
+        run: |
+          npm install --package-lock-only --ignore-scripts --no-fund --no-audit
+          npm ci --ignore-scripts --no-fund --no-audit
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
       - name: Run desktop and mobile workflows
@@ -110,9 +112,10 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: site/package-lock.json
-      - run: npm ci --ignore-scripts --no-fund --no-audit
+      - name: Generate and install exact dependencies
+        run: |
+          npm install --package-lock-only --ignore-scripts --no-fund --no-audit
+          npm ci --ignore-scripts --no-fund --no-audit
       - uses: actions/download-artifact@v4
         with:
           name: site-dist
