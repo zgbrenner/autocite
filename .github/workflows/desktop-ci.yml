@@ -10,7 +10,7 @@ on:
       - "tests/test_application_*.py"
       - "tests/test_pdf_export.py"
       - ".github/workflows/desktop-ci.yml"
-      - ".github/workflows/desktop-release.yml"
+      - ".github/workflows/desktop.yml"
   push:
     branches: [main]
     paths:
@@ -21,7 +21,7 @@ on:
       - "tests/test_application_*.py"
       - "tests/test_pdf_export.py"
       - ".github/workflows/desktop-ci.yml"
-      - ".github/workflows/desktop-release.yml"
+      - ".github/workflows/desktop.yml"
   workflow_dispatch:
 
 permissions:
@@ -36,6 +36,44 @@ env:
   NODE_OPTIONS: "--max-old-space-size=4096"
 
 jobs:
+  lockfiles:
+    name: Generate reproducible dependency lockfiles
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Generate exact npm and Cargo lockfiles
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --package-lock-only --ignore-scripts --no-fund --no-audit --prefix desktop
+          cargo generate-lockfile --manifest-path desktop/src-tauri/Cargo.toml
+      - name: Commit lockfiles when they changed
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add desktop/package-lock.json desktop/src-tauri/Cargo.lock
+          if git diff --cached --quiet; then
+            echo "Desktop lockfiles are already current."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "build: lock desktop dependencies"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
+
   frontend:
     name: Frontend quality (Node ${{ matrix.node }})
     runs-on: ubuntu-24.04
@@ -54,7 +92,7 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
           cache-dependency-path: desktop/package.json
-      - name: Install exact desktop dependencies and generate lockfile
+      - name: Install desktop dependencies and generate lockfile
         run: npm install --ignore-scripts --no-fund --no-audit
       - name: Lint TypeScript and React
         run: npm run lint
@@ -147,6 +185,8 @@ jobs:
           mkdir -p src-tauri/binaries
           printf '#!/bin/sh\nexit 0\n' > src-tauri/binaries/autocite-backend-x86_64-unknown-linux-gnu
           chmod +x src-tauri/binaries/autocite-backend-x86_64-unknown-linux-gnu
+      - name: Generate Cargo lockfile
+        run: cargo generate-lockfile --manifest-path src-tauri/Cargo.toml
       - name: Check Rust formatting
         run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
       - name: Run Clippy with warnings denied
