@@ -1,0 +1,227 @@
+name: Quality
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: Python ${{ matrix.python }}
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+      - name: Install Python dependencies
+        run: uv sync --extra dev
+      - name: Lint Python
+        run: uv run ruff check src tests training scripts
+      - name: Compile Python modules
+        run: uv run python -m compileall -q src/autocite_mcp training scripts
+      - name: Run Python test suite
+        run: uv run pytest
+      - name: Run deterministic gold evaluation
+        run: uv run autocite eval --file evals/gold.jsonl
+      - name: Build Python distributions
+        if: matrix.python == '3.12'
+        run: uv build
+      - name: Verify distribution contents
+        if: matrix.python == '3.12'
+        run: |
+          uv run python - <<'PY'
+          from pathlib import Path
+          import zipfile
+
+          wheels = list(Path("dist").glob("*.whl"))
+          assert wheels, "No wheel was built"
+          with zipfile.ZipFile(wheels[0]) as archive:
+              names = archive.namelist()
+          forbidden = [name for name in names if name.startswith("reference/") or "autocite_slm.jsonl" in name]
+          assert not forbidden, f"Forbidden packaged files: {forbidden}"
+          print(f"Verified {wheels[0]} with {len(names)} entries")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: matrix.python == '3.12'
+        with:
+          name: python-distributions
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
+
+  frontend:
+    name: React editor
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        working-directory: apps/desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install frontend dependencies
+        run: npm install --no-fund --no-audit
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: Unit tests
+        run: npm test
+      - name: Production frontend build
+        run: npm run build
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-frontend
+          path: apps/desktop/dist
+          if-no-files-found: error
+          retention-days: 7
+
+  rust:
+    name: Tauri native shell
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        working-directory: apps/desktop/src-tauri
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential curl file libayatana-appindicator3-dev librsvg2-dev \
+            libssl-dev libwebkit2gtk-4.1-dev libxdo-dev pkg-config wget
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+      - name: Format check
+        run: cargo fmt --all --check
+      - name: Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Rust tests
+        run: cargo test --all-targets --all-features
+
+  application-contract:
+    name: Application and MCP contracts
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Install application dependencies
+        run: uv sync --extra dev
+      - name: Run focused application tests
+        run: |
+          uv run pytest \
+            tests/test_application_store.py \
+            tests/test_application_context_reducer.py \
+            tests/test_application_service.py \
+            tests/test_application_http_api.py
+      - name: Verify stateful MCP registration
+        run: |
+          AUTOCITE_SESSION_DB="$RUNNER_TEMP/mcp-sessions.sqlite3" \
+          uv run python - <<'PY'
+          from autocite_mcp.application.mcp_server import mcp
+          assert getattr(mcp, "_autocite_application_tools_registered", False)
+          print("Stateful application tools registered")
+          PY
+
+  sidecar:
+    name: Packaged Python sidecar
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install sidecar build dependencies
+        run: uv sync --extra desktop-build
+      - name: Build target-triple sidecar
+        run: uv run python scripts/build_tauri_sidecar.py
+      - name: Smoke test authenticated API
+        shell: bash
+        run: |
+          sidecar="$(find apps/desktop/src-tauri/binaries -maxdepth 1 -type f -name 'autocite-sidecar-*' | head -n 1)"
+          test -n "$sidecar"
+          uv run python scripts/smoke_tauri_sidecar.py "$sidecar"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-sidecar
+          path: apps/desktop/src-tauri/binaries/autocite-sidecar-*
+          if-no-files-found: error
+          retention-days: 7
+
+  integrated-desktop:
+    name: Integrated Linux desktop build
+    runs-on: ubuntu-22.04
+    needs: [python, frontend, rust, application-contract, sidecar]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential curl file libayatana-appindicator3-dev librsvg2-dev \
+            libssl-dev libwebkit2gtk-4.1-dev libxdo-dev pkg-config wget
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+      - name: Install dependencies
+        run: |
+          uv sync --extra desktop-build
+          cd apps/desktop
+          npm install --no-fund --no-audit
+      - name: Build sidecar and icons
+        run: |
+          uv run python scripts/build_tauri_sidecar.py
+          cd apps/desktop
+          npx tauri icon src-tauri/icons/autocite-icon.svg
+      - name: Build deb bundle
+        working-directory: apps/desktop
+        run: npm run tauri -- build --bundles deb
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-desktop-smoke-bundle
+          path: apps/desktop/src-tauri/target/release/bundle/deb/*
+          if-no-files-found: error
+          retention-days: 7
