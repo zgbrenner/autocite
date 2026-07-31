@@ -4,12 +4,12 @@ AutoCite is an open-source, local-first legal citation checker for supported Blu
 
 ## Primary pages
 
-- Home: https://zgbrenner.github.io/autocite/
-- Download: https://zgbrenner.github.io/autocite/download/
-- Private Citation Risk Scan: https://zgbrenner.github.io/autocite/citation-risk-scan/
-- Methodology: https://zgbrenner.github.io/autocite/methodology/
-- Privacy: https://zgbrenner.github.io/autocite/privacy/
-- Guides: https://zgbrenner.github.io/autocite/guides/
+- Home: https://zgbrenner-autocite.pages.dev/
+- Download: https://zgbrenner-autocite.pages.dev/download/
+- Private Citation Risk Scan: https://zgbrenner-autocite.pages.dev/citation-risk-scan/
+- Methodology: https://zgbrenner-autocite.pages.dev/methodology/
+- Privacy: https://zgbrenner-autocite.pages.dev/privacy/
+- Guides: https://zgbrenner-autocite.pages.dev/guides/
 - Source: https://github.com/zgbrenner/autocite
 
 ## Capabilities
