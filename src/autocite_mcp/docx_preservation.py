@@ -14,7 +14,6 @@ from ._docx_preservation_model import (
     DocxValidationError,
     DocxValidationReport,
     PreservedDocxResult,
-    _IndexedPackage,
     _InternalLocation,
 )
 from ._docx_preservation_mutation import (

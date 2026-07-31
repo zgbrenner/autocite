@@ -6,16 +6,21 @@ import secrets
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from .application_http import build_application_http_app
 from .server import mcp
 
 ASGIApp = Callable[
-    [dict[str, Any], Callable[[], Awaitable[dict[str, Any]]], Callable[[dict[str, Any]], Awaitable[None]]],
+    [
+        dict[str, Any],
+        Callable[[], Awaitable[dict[str, Any]]],
+        Callable[[dict[str, Any]], Awaitable[None]],
+    ],
     Awaitable[None],
 ]
 
 
 class BearerGate:
-    """Optional bearer gate and no-store wrapper for self-hosted HTTP MCP."""
+    """Optional bearer gate and no-store wrapper for hosted local services."""
 
     def __init__(self, app: ASGIApp, token: str | None = None) -> None:
         self.app = app
@@ -27,7 +32,13 @@ class BearerGate:
             return
 
         path = str(scope.get("path") or "")
-        if self.token and (path == "/mcp" or path.startswith("/mcp/")):
+        protected_path = (
+            path == "/mcp"
+            or path.startswith("/mcp/")
+            or path == "/app"
+            or path.startswith("/app/")
+        )
+        if self.token and protected_path:
             headers = {
                 key.decode("latin-1").lower(): value.decode("latin-1")
                 for key, value in scope.get("headers", [])
@@ -49,11 +60,16 @@ class BearerGate:
                             (b"content-type", b"application/json"),
                             (b"cache-control", b"no-store"),
                             (b"www-authenticate", b"Bearer"),
-                            (b"content-length", str(len(payload)).encode("ascii")),
+                            (
+                                b"content-length",
+                                str(len(payload)).encode("ascii"),
+                            ),
                         ],
                     }
                 )
-                await send({"type": "http.response.body", "body": payload})
+                await send(
+                    {"type": "http.response.body", "body": payload}
+                )
                 return
 
         async def send_no_store(message: dict[str, Any]) -> None:
@@ -71,9 +87,14 @@ class BearerGate:
 
 
 def build_http_app(api_token: str | None = None) -> BearerGate:
-    """Build the hosted MCP app with optional AUTOCITE_API_TOKEN protection."""
-    token = api_token if api_token is not None else os.getenv("AUTOCITE_API_TOKEN")
-    return BearerGate(mcp.streamable_http_app(), token=token)
+    """Build the hosted MCP and local application API surface."""
+    token = (
+        api_token
+        if api_token is not None
+        else os.getenv("AUTOCITE_API_TOKEN")
+    )
+    combined = build_application_http_app(mcp.streamable_http_app())
+    return BearerGate(combined, token=token)
 
 
 _LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
@@ -82,7 +103,9 @@ _LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 def validate_loopback_host(host: str) -> str:
     normalized = host.strip().lower()
     if normalized not in _LOOPBACK_HOSTS:
-        raise ValueError("AutoCite HTTP mode is local-only and must bind to a loopback host")
+        raise ValueError(
+            "AutoCite HTTP mode is local-only and must bind to a loopback host"
+        )
     return host
 
 
@@ -98,20 +121,34 @@ def resolve_bind_host(
     and a configured AUTOCITE_API_TOKEN, so a hosted deployment can never start
     unauthenticated by accident.
     """
-    resolved = (host if host is not None else os.getenv("AUTOCITE_HOST", "127.0.0.1")).strip()
+    resolved = (
+        host
+        if host is not None
+        else os.getenv("AUTOCITE_HOST", "127.0.0.1")
+    ).strip()
     if resolved.lower() in _LOOPBACK_HOSTS:
         return resolved
-    opt_in = (allow_remote if allow_remote is not None else os.getenv("AUTOCITE_ALLOW_REMOTE", "")).strip().lower()
+    opt_in = (
+        allow_remote
+        if allow_remote is not None
+        else os.getenv("AUTOCITE_ALLOW_REMOTE", "")
+    ).strip().lower()
     if opt_in not in {"1", "true", "yes"}:
         raise ValueError(
-            "AutoCite binds to loopback by default. To serve a non-loopback host such as "
-            f"{resolved!r}, set AUTOCITE_ALLOW_REMOTE=1 and configure AUTOCITE_API_TOKEN."
+            "AutoCite binds to loopback by default. To serve a non-loopback "
+            f"host such as {resolved!r}, set AUTOCITE_ALLOW_REMOTE=1 and "
+            "configure AUTOCITE_API_TOKEN."
         )
-    token = api_token if api_token is not None else os.getenv("AUTOCITE_API_TOKEN")
+    token = (
+        api_token
+        if api_token is not None
+        else os.getenv("AUTOCITE_API_TOKEN")
+    )
     if not token:
         raise ValueError(
             "Refusing to bind a non-loopback host without AUTOCITE_API_TOKEN. "
-            "An unauthenticated public /mcp endpoint would expose the review tools to anyone."
+            "An unauthenticated public /mcp or /app endpoint would expose "
+            "document review capabilities."
         )
     return resolved
 
@@ -120,17 +157,22 @@ def main() -> None:
     transport = os.getenv("AUTOCITE_TRANSPORT", "stdio").strip().lower()
     allowed = {"stdio", "sse", "streamable-http"}
     if transport not in allowed:
-        raise ValueError(f"AUTOCITE_TRANSPORT must be one of {sorted(allowed)}")
+        raise ValueError(
+            f"AUTOCITE_TRANSPORT must be one of {sorted(allowed)}"
+        )
     if transport == "streamable-http":
         import uvicorn
 
         host = resolve_bind_host()
-        port = int(os.getenv("PORT", os.getenv("AUTOCITE_PORT", "8000")))
+        port = int(
+            os.getenv("PORT", os.getenv("AUTOCITE_PORT", "8000"))
+        )
         uvicorn.run(build_http_app(), host=host, port=port)
         return
     if os.getenv("AUTOCITE_API_TOKEN"):
         raise ValueError(
-            "AUTOCITE_API_TOKEN applies only to streamable-http. Use a private local client for stdio."
+            "AUTOCITE_API_TOKEN applies only to streamable-http. "
+            "Use a private local client for stdio."
         )
     mcp.run(transport=transport)
 

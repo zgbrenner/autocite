@@ -4,7 +4,6 @@ import io
 import json
 import stat
 import zipfile
-from pathlib import Path
 
 import pytest
 from docx import Document
