@@ -1,0 +1,48 @@
+name: Refresh uv lock
+
+on:
+  push:
+    branches:
+      - codex/phase-2-tauri-word-processor
+    paths:
+      - pyproject.toml
+      - uv.lock
+      - .github/workflows/refresh-uv-lock.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-uv-lock-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: codex/phase-2-tauri-word-processor
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - name: Regenerate universal lockfile from current project metadata
+        run: |
+          set -euo pipefail
+          uv lock
+          uv lock --check
+      - name: Commit refreshed lockfile
+        run: |
+          set -euo pipefail
+          git add uv.lock
+          if git diff --cached --quiet; then
+            echo "uv.lock is already current."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "build: refresh uv lockfile"
+          git push origin HEAD:codex/phase-2-tauri-word-processor
