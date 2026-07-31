@@ -1,0 +1,63 @@
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: America/Los_Angeles
+    open-pull-requests-limit: 5
+    groups:
+      python-runtime:
+        patterns: ["mcp*", "httpx", "eyecite", "beautifulsoup4", "lxml", "python-docx", "pypdf"]
+      python-ml:
+        patterns: ["torch*", "transformers", "accelerate", "peft", "sentence-transformers", "gliner", "bitsandbytes"]
+      python-development:
+        dependency-type: development
+    labels: [dependencies, python]
+
+  - package-ecosystem: npm
+    directory: /apps/desktop
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:20"
+      timezone: America/Los_Angeles
+    open-pull-requests-limit: 5
+    groups:
+      tauri-javascript:
+        patterns: ["@tauri-apps/*"]
+      tiptap:
+        patterns: ["@tiptap/*"]
+      react:
+        patterns: ["react", "react-dom", "@types/react", "@types/react-dom"]
+      frontend-development:
+        dependency-type: development
+    labels: [dependencies, javascript]
+
+  - package-ecosystem: cargo
+    directory: /apps/desktop/src-tauri
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:40"
+      timezone: America/Los_Angeles
+    open-pull-requests-limit: 5
+    groups:
+      tauri-rust:
+        patterns: ["tauri", "tauri-*", "tauri-plugin-*"]
+    labels: [dependencies, rust]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "10:00"
+      timezone: America/Los_Angeles
+    open-pull-requests-limit: 5
+    groups:
+      github-actions:
+        patterns: ["*"]
+    labels: [dependencies, github-actions]
