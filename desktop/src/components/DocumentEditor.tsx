@@ -4,7 +4,7 @@ import FontFamily from "@tiptap/extension-font-family";
 import Highlight from "@tiptap/extension-highlight";
 import { TableKit } from "@tiptap/extension-table";
 import TextAlign from "@tiptap/extension-text-align";
-import TextStyle from "@tiptap/extension-text-style";
+import { TextStyle } from "@tiptap/extension-text-style";
 import { Markdown } from "@tiptap/markdown";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -90,14 +90,13 @@ export function DocumentEditor({
 
   useEffect(() => {
     if (editor === null) return;
-    const current = (editor as MarkdownCapableEditor).getMarkdown();
-    if (current !== value) {
-      editor.commands.setContent(value, {
-        contentType: "markdown",
-        emitUpdate: false,
-      });
-    }
+    const markdown = (editor as MarkdownCapableEditor).getMarkdown();
+    if (markdown === value) return;
+    editor.commands.setContent(value, {
+      contentType: "markdown",
+      emitUpdate: false,
+    });
   }, [editor, value]);
 
-  return <EditorContent editor={editor} className="document-editor" />;
+  return <EditorContent editor={editor} />;
 }
