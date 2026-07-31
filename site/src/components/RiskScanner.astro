@@ -1,0 +1,119 @@
+<div class="scanner-shell" data-risk-scanner>
+  <section class="scanner-input">
+    <div class="scanner-label">
+      <label for="risk-input">Paste a short citation sample</label>
+      <span class="local-status">Runs in this browser</span>
+    </div>
+    <textarea
+      id="risk-input"
+      class="scanner-textarea"
+      spellcheck="false"
+      maxlength="12000"
+      placeholder="Example: See 42 USC §1983. id at 172."
+    ></textarea>
+    <div class="scanner-controls">
+      <button class="button button-blue" type="button" data-scan>Scan citation mechanics</button>
+      <button class="button button-secondary" type="button" data-sample>Use sample</button>
+      <button class="button button-secondary" type="button" data-clear>Clear</button>
+    </div>
+    <p class="scanner-disclaimer">
+      This limited preview checks a small set of mechanical patterns. It does not verify good-law status,
+      proposition support, controlling authority, or complete Bluebook compliance.
+    </p>
+  </section>
+
+  <section class="scanner-results" aria-labelledby="scanner-results-title">
+    <div class="scanner-label">
+      <span id="scanner-results-title">Private preview</span>
+      <span data-count>0 issues</span>
+    </div>
+    <div class="scanner-output scanner-empty" data-output aria-live="polite">
+      Your corrected preview will appear here. Nothing is uploaded.
+    </div>
+    <div class="finding-list" data-findings></div>
+    <p class="scanner-summary" data-summary></p>
+    <div class="scanner-controls" data-result-actions hidden>
+      <button class="button button-secondary" type="button" data-copy>Copy corrected text</button>
+      <button class="button button-secondary" type="button" data-share>Share private summary</button>
+    </div>
+    <a class="button" style="margin-top: 20px; width: 100%;" href="https://github.com/zgbrenner/autocite/releases/latest">
+      Review a full document locally
+    </a>
+  </section>
+</div>
+
+<script>
+  import { scanCitationRisk } from "../lib/riskScanner";
+
+  const root = document.querySelector<HTMLElement>("[data-risk-scanner]");
+  if (root) {
+    const input = root.querySelector<HTMLTextAreaElement>("#risk-input");
+    const output = root.querySelector<HTMLElement>("[data-output]");
+    const findingsRoot = root.querySelector<HTMLElement>("[data-findings]");
+    const count = root.querySelector<HTMLElement>("[data-count]");
+    const summary = root.querySelector<HTMLElement>("[data-summary]");
+    const resultActions = root.querySelector<HTMLElement>("[data-result-actions]");
+    let correctedText = "";
+    let shareSummary = "";
+
+    const render = () => {
+      if (!input || !output || !findingsRoot || !count || !summary || !resultActions) return;
+      const result = scanCitationRisk(input.value);
+      correctedText = result.correctedText;
+      shareSummary = result.shareSummary;
+      output.textContent = result.correctedText || "Enter a citation sample to begin.";
+      output.classList.toggle("scanner-empty", result.inputLength === 0);
+      count.textContent = `${result.findings.length} issue${result.findings.length === 1 ? "" : "s"}`;
+      summary.textContent = result.shareSummary;
+      findingsRoot.replaceChildren();
+
+      for (const finding of result.findings) {
+        const card = document.createElement("article");
+        card.className = "finding";
+        const title = document.createElement("strong");
+        title.textContent = finding.label;
+        const explanation = document.createElement("p");
+        explanation.textContent = finding.explanation;
+        const change = document.createElement("code");
+        change.textContent = `${finding.original} → ${finding.replacement}`;
+        card.append(title, explanation, change);
+        findingsRoot.append(card);
+      }
+
+      resultActions.hidden = result.inputLength === 0;
+    };
+
+    root.querySelector("[data-scan]")?.addEventListener("click", render);
+    root.querySelector("[data-sample]")?.addEventListener("click", () => {
+      if (!input) return;
+      input.value = "The claim arises under 42 USC §1983. Smith controls. id at 172. See also 17 CFR §240.10b-5.";
+      render();
+      input.focus();
+    });
+    root.querySelector("[data-clear]")?.addEventListener("click", () => {
+      if (!input || !output || !findingsRoot || !count || !summary || !resultActions) return;
+      input.value = "";
+      correctedText = "";
+      shareSummary = "";
+      output.textContent = "Your corrected preview will appear here. Nothing is uploaded.";
+      output.classList.add("scanner-empty");
+      findingsRoot.replaceChildren();
+      count.textContent = "0 issues";
+      summary.textContent = "";
+      resultActions.hidden = true;
+      input.focus();
+    });
+    root.querySelector("[data-copy]")?.addEventListener("click", async () => {
+      if (!correctedText) return;
+      await navigator.clipboard.writeText(correctedText);
+    });
+    root.querySelector("[data-share]")?.addEventListener("click", async () => {
+      if (!shareSummary) return;
+      if (navigator.share) {
+        await navigator.share({ title: "AutoCite Citation Risk Scan", text: shareSummary });
+      } else {
+        await navigator.clipboard.writeText(shareSummary);
+      }
+    });
+  }
+</script>
