@@ -5,7 +5,7 @@ from pathlib import Path
 from PyInstaller.utils.hooks import collect_all
 
 
-root = Path(SPECPATH).resolve().parent.parent
+root = Path(SPECPATH).resolve().parent
 
 packages = (
     "autocite_mcp",
