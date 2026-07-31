@@ -3,7 +3,11 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
-import type { ApplicationAdapter } from "./services/applicationAdapter";
+import type {
+  ApplicationAdapter,
+  ReviewDecisionRequest,
+  UpdateDocumentRequest,
+} from "./services/applicationAdapter";
 
 function createAdapter(): ApplicationAdapter {
   return {
@@ -46,7 +50,7 @@ function createAdapter(): ApplicationAdapter {
       updatedAt: "2026-07-31T00:00:00Z",
     })),
     createDocument: vi.fn(),
-    updateDocument: vi.fn(async (request) => ({
+    updateDocument: vi.fn(async (request: UpdateDocumentRequest) => ({
       sessionId: request.sessionId,
       title: request.title ?? "Motion to dismiss",
       text: request.text,
@@ -93,7 +97,7 @@ function createAdapter(): ApplicationAdapter {
       total: 1,
       nextOffset: null,
     })),
-    setReviewDecision: vi.fn(async (request) => ({
+    setReviewDecision: vi.fn(async (request: ReviewDecisionRequest) => ({
       itemId: request.itemId,
       decision: request.decision,
     })),
