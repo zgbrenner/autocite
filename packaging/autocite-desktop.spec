@@ -1,14 +1,18 @@
 # PyInstaller specification for a fast-starting, installer-free desktop bundle.
+from pathlib import Path
+
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
+
+root = Path(SPECPATH).resolve().parent.parent
 
 datas = collect_data_files("autocite_mcp")
 datas += collect_data_files("reporters_db")
 hiddenimports = collect_submodules("eyecite")
 
 analysis = Analysis(
-    ["src/autocite_mcp/desktop_entry.py"],
-    pathex=["src"],
+    [str(root / "src/autocite_mcp/desktop_entry.py")],
+    pathex=[str(root / "src")],
     datas=datas,
     hiddenimports=hiddenimports,
     excludes=[
