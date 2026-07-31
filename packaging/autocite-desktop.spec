@@ -9,6 +9,7 @@ root = Path(SPECPATH).resolve().parent
 datas = collect_data_files("autocite_mcp")
 datas += collect_data_files("courts_db")
 datas += collect_data_files("reporters_db")
+datas += collect_data_files("docx")
 hiddenimports = collect_submodules("eyecite")
 
 analysis = Analysis(
