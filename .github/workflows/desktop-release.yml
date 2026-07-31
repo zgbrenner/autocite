@@ -1,0 +1,292 @@
+name: Continuous Desktop Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: continuous-desktop-release
+  cancel-in-progress: false
+
+env:
+  PYTHONUTF8: "1"
+  CARGO_TERM_COLOR: always
+
+jobs:
+  validate:
+    name: Release validation
+    runs-on: ubuntu-22.04
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      title: ${{ steps.version.outputs.title }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: version
+        name: Choose immutable release identifier
+        shell: bash
+        run: |
+          tag="v0.7.0-build.${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}"
+          title="AutoCite v0.7.0 build ${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "title=$title" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install release validation dependencies
+        run: |
+          uv sync --extra dev
+          cd apps/desktop
+          npm install --no-fund --no-audit
+      - name: Validate Python and application contracts
+        run: |
+          uv run ruff check src tests training scripts
+          uv run pytest
+          uv run autocite eval --file evals/gold.jsonl
+      - name: Validate frontend
+        working-directory: apps/desktop
+        run: |
+          npm run typecheck
+          npm run lint
+          npm test
+          npm run build
+      - name: Build Python packages
+        run: uv build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-packages
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
+
+  build:
+    name: Build ${{ matrix.label }}
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: Windows x64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundles: nsis,msi
+            artifact: windows-x64
+          - label: macOS Apple Silicon
+            os: macos-14
+            target: aarch64-apple-darwin
+            bundles: dmg,app
+            artifact: macos-arm64
+          - label: macOS Intel
+            os: macos-13
+            target: x86_64-apple-darwin
+            bundles: dmg,app
+            artifact: macos-x64
+          - label: Linux x64
+            os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            bundles: deb,appimage
+            artifact: linux-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux native dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential curl file libayatana-appindicator3-dev librsvg2-dev \
+            libssl-dev libwebkit2gtk-4.1-dev libxdo-dev pkg-config wget
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+          key: ${{ matrix.target }}
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          uv sync --extra desktop-build
+          cd apps/desktop
+          npm install --no-fund --no-audit
+      - name: Import optional Apple signing certificate
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          if [[ -z "$APPLE_CERTIFICATE" ]]; then
+            echo "No Apple certificate configured; producing an unsigned macOS bundle."
+            exit 0
+          fi
+          keychain="$RUNNER_TEMP/autocite-signing.keychain-db"
+          certificate="$RUNNER_TEMP/autocite-signing.p12"
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$certificate"
+          security create-keychain -p "autocite-ci" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "autocite-ci" "$keychain"
+          security import "$certificate" -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
+          security list-keychain -d user -s "$keychain"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "autocite-ci" "$keychain"
+          echo "APPLE_SIGNING_IDENTITY=$APPLE_SIGNING_IDENTITY" >> "$GITHUB_ENV"
+      - name: Build target sidecar
+        shell: bash
+        run: uv run python scripts/build_tauri_sidecar.py --target-triple "${{ matrix.target }}"
+      - name: Smoke test sidecar
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import subprocess
+          import sys
+
+          root = Path("apps/desktop/src-tauri/binaries")
+          candidates = sorted(path for path in root.glob("autocite-sidecar-*") if path.is_file())
+          if not candidates:
+              raise SystemExit("No sidecar binary was built")
+          subprocess.run([sys.executable, "scripts/smoke_tauri_sidecar.py", str(candidates[0])], check=True)
+          PY
+      - name: Generate application icons
+        working-directory: apps/desktop
+        shell: bash
+        run: npx tauri icon src-tauri/icons/autocite-icon.svg
+      - name: Build Tauri bundles
+        working-directory: apps/desktop
+        shell: bash
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: npm run tauri -- build --target "${{ matrix.target }}" --bundles "${{ matrix.bundles }}"
+      - name: Collect release files
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import shutil
+
+          target = "${{ matrix.target }}"
+          source = Path("apps/desktop/src-tauri/target") / target / "release" / "bundle"
+          destination = Path("release-output")
+          destination.mkdir(parents=True, exist_ok=True)
+          files = [path for path in source.rglob("*") if path.is_file()]
+          if not files:
+              raise SystemExit(f"No Tauri bundles found under {source}")
+          for path in files:
+              relative_parent = "-".join(path.relative_to(source).parts[:-1])
+              name = f"{relative_parent}-{path.name}" if relative_parent else path.name
+              shutil.copy2(path, destination / name)
+          print("\n".join(str(path) for path in destination.iterdir()))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: release-output/*
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Publish GitHub release
+    needs: [validate, build]
+    runs-on: ubuntu-22.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+      RELEASE_TITLE: ${{ needs.validate.outputs.title }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          path: downloaded-assets
+      - name: Flatten and checksum release assets
+        run: |
+          python - <<'PY'
+          from hashlib import sha256
+          from pathlib import Path
+          import shutil
+
+          source = Path("downloaded-assets")
+          destination = Path("release-assets")
+          destination.mkdir()
+          seen = set()
+          for path in sorted(source.rglob("*")):
+              if not path.is_file():
+                  continue
+              artifact = path.relative_to(source).parts[0]
+              candidate = path.name
+              if candidate in seen:
+                  candidate = f"{artifact}-{candidate}"
+              seen.add(candidate)
+              shutil.copy2(path, destination / candidate)
+
+          checksum_lines = []
+          for path in sorted(destination.iterdir()):
+              if path.is_file():
+                  checksum_lines.append(f"{sha256(path.read_bytes()).hexdigest()}  {path.name}")
+          (destination / "SHA256SUMS.txt").write_text("\n".join(checksum_lines) + "\n", encoding="utf-8")
+          print("\n".join(item.name for item in destination.iterdir()))
+          PY
+      - uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: cyclonedx-json
+          output-file: release-assets/autocite-source-sbom.cdx.json
+      - name: Write release notes
+        run: |
+          cat > release-notes.md <<EOF
+          # ${RELEASE_TITLE}
+
+          This release was produced automatically from commit `${GITHUB_SHA}` after the complete Python, MCP application, React editor, Rust shell, packaged-sidecar, and deterministic evaluation gates passed.
+
+          ## Downloads
+
+          - **Windows x64:** NSIS and MSI installers.
+          - **macOS:** separate Apple Silicon and Intel DMG/application bundles.
+          - **Linux x64:** AppImage and Debian packages.
+          - **Python:** wheel and source distribution for MCP and command-line use.
+
+          Every file is accompanied by `SHA256SUMS.txt`. The release also includes a CycloneDX source SBOM and GitHub build provenance attestations.
+
+          Ordinary editing and deterministic citation review are local. Source-backed case retrieval remains an explicit option and requires separate configuration.
+          EOF
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: release-assets/*
+      - name: Create immutable release
+        shell: bash
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release delete "$RELEASE_TAG" --yes --cleanup-tag
+          fi
+          gh release create "$RELEASE_TAG" release-assets/* \
+            --target "$GITHUB_SHA" \
+            --title "$RELEASE_TITLE" \
+            --notes-file release-notes.md \
+            --latest
