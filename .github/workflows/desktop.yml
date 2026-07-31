@@ -1,33 +1,86 @@
 name: Desktop release
 
 on:
-  workflow_dispatch:
-  push:
+  pull_request:
     branches: [main]
     paths:
-      - pyproject.toml
+      - "desktop/**"
+      - "packaging/autocite-sidecar.py"
+      - "packaging/autocite-sidecar.spec"
+      - "scripts/package_tauri_release.py"
+      - "src/autocite_mcp/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/desktop.yml"
+      - ".github/workflows/desktop-ci.yml"
+  push:
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: desktop-${{ github.ref }}
-  cancel-in-progress: false
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CI: "true"
+  NODE_OPTIONS: "--max-old-space-size=4096"
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    name: Verify release contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    outputs:
+      desktop-version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.12"
-      - run: uv sync --extra dev
+      - name: Synchronize locked release environment
+        run: uv sync --frozen --extra dev --extra tauri-build
+      - name: Validate desktop version consistency
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run python - <<'PY'
+          import json
+          import os
+          import re
+          import tomllib
+          from pathlib import Path
+
+          package_version = json.loads(
+              Path("desktop/package.json").read_text(encoding="utf-8")
+          )["version"]
+          tauri_version = json.loads(
+              Path("desktop/src-tauri/tauri.conf.json").read_text(encoding="utf-8")
+          )["version"]
+          cargo_version = tomllib.loads(
+              Path("desktop/src-tauri/Cargo.toml").read_text(encoding="utf-8")
+          )["package"]["version"]
+          versions = {package_version, tauri_version, cargo_version}
+          assert len(versions) == 1, (
+              "desktop/package.json, tauri.conf.json, and Cargo.toml must use "
+              f"one version, found {sorted(versions)}"
+          )
+          assert re.fullmatch(
+              r"[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?", package_version
+          ), f"invalid desktop version: {package_version}"
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"version={package_version}\n")
+          print(f"verified desktop version {package_version}")
+          PY
       - name: Lint complete repository
         run: uv run ruff check src tests training scripts
-      - name: Test complete repository
+      - name: Run complete Python and workflow contract suite
         run: uv run pytest --junitxml=pytest-results.xml
-      - name: Compile complete repository
+      - name: Compile Python sources
         run: uv run python -m compileall -q src/autocite_mcp training scripts
       - name: Evaluate deterministic gold corpus
         run: uv run autocite eval --file evals/gold.jsonl
@@ -52,208 +105,452 @@ jobs:
           assert not any("The_Bluebook" in name for name in names)
           print(f"verified {wheel}")
           PY
-      - name: Upload verification diagnostics
+      - name: Upload release verification diagnostics
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: desktop-release-verification
           path: pytest-results.xml
           if-no-files-found: warn
+          retention-days: 14
 
   build-desktop:
+    name: Build ${{ matrix.platform }}
     needs: verify
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 75
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: windows-latest
+          - os: windows-2025
             platform: windows-x64
-            executable: dist/AutoCite/AutoCite.exe
+            target: x86_64-pc-windows-msvc
           - os: macos-15-intel
             platform: macos-x64
-            executable: dist/AutoCite/AutoCite
-          - os: ubuntu-latest
+            target: x86_64-apple-darwin
+          - os: macos-15
+            platform: macos-arm64
+            target: aarch64-apple-darwin
+          - os: ubuntu-24.04
             platform: linux-x64
-            executable: dist/AutoCite/AutoCite
-    runs-on: ${{ matrix.os }}
+            target: x86_64-unknown-linux-gnu
+    env:
+      DESKTOP_VERSION: ${{ needs.verify.outputs.desktop-version }}
+      PLATFORM: ${{ matrix.platform }}
+      TARGET: ${{ matrix.target }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
+      - name: Install Linux Tauri prerequisites
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            file \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev \
+            patchelf \
+            wget
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.12"
-      - run: uv sync --extra desktop-build
-      - name: Read package version
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Synchronize locked sidecar environment
+        run: uv sync --frozen --extra tauri-build
+      - name: Install exact desktop dependencies
+        run: npm ci --ignore-scripts --no-fund --no-audit --prefix desktop
+      - name: Build native authenticated sidecar
         shell: bash
         run: |
-          VERSION=$(uv run python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
-          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-      - run: uv run pyinstaller packaging/autocite-desktop.spec --clean --noconfirm
-      - name: Run packaged self-tests on Windows
-        if: runner.os == 'Windows'
-        shell: pwsh
+          set -euo pipefail
+          uv run pyinstaller packaging/autocite-sidecar.spec \
+            --clean \
+            --noconfirm \
+            --distpath sidecar-dist \
+            --workpath "build/sidecar-$PLATFORM"
+      - name: Run packaged sidecar self-test
+        shell: bash
         run: |
-          $executable = (Resolve-Path "${{ matrix.executable }}").Path
-          foreach ($argument in @("--self-test", "--self-test-preservation")) {
-            $process = Start-Process -FilePath $executable -ArgumentList $argument -Wait -PassThru
-            if ($process.ExitCode -ne 0) {
-              throw "Packaged AutoCite $argument failed with exit code $($process.ExitCode)"
-            }
+          set -euo pipefail
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            SIDECAR="sidecar-dist/autocite-backend.exe"
+          else
+            SIDECAR="sidecar-dist/autocite-backend"
+          fi
+          "$SIDECAR" --self-test | tee sidecar-self-test.json
+          uv run python - <<'PY'
+          import json
+
+          result = json.load(open("sidecar-self-test.json", encoding="utf-8"))
+          assert result == {
+              "authenticated": True,
+              "host": "127.0.0.1",
+              "local_first": True,
+              "status": "ok",
           }
-      - name: Run packaged self-tests on Unix
-        if: runner.os != 'Windows'
-        run: |
-          ${{ matrix.executable }} --self-test
-          ${{ matrix.executable }} --self-test-preservation
-      - name: Package portable archive
+          print("packaged sidecar self-test verified")
+          PY
+      - name: Place target-named Tauri sidecar
         shell: bash
         run: |
-          uv run python scripts/package_desktop.py \
-            --dist dist/AutoCite \
-            --output release \
-            --platform "${{ matrix.platform }}" \
-            --version "$VERSION" \
+          set -euo pipefail
+          uv run python - <<'PY'
+          import os
+          import shutil
+          import stat
+          from pathlib import Path
+
+          windows = os.environ["RUNNER_OS"] == "Windows"
+          source = Path("sidecar-dist") / (
+              "autocite-backend.exe" if windows else "autocite-backend"
+          )
+          suffix = ".exe" if windows else ""
+          destination = (
+              Path("desktop/src-tauri/binaries")
+              / f"autocite-backend-{os.environ['TARGET']}{suffix}"
+          )
+          destination.parent.mkdir(parents=True, exist_ok=True)
+          shutil.copy2(source, destination)
+          if not windows:
+              destination.chmod(destination.stat().st_mode | stat.S_IXUSR)
+          print(destination)
+          PY
+      - name: Verify Rust shell against locked dependencies
+        run: cargo test --manifest-path desktop/src-tauri/Cargo.toml --locked
+      - name: Build Tauri application and native bundles
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd desktop
+          npm run tauri -- build --target "$TARGET"
+      - name: Normalize installers, checksums, and provenance manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUNDLE_ROOT="desktop/src-tauri/target/$TARGET/release/bundle"
+          test -d "$BUNDLE_ROOT"
+          uv run python scripts/package_tauri_release.py \
+            --bundle-root "$BUNDLE_ROOT" \
+            --output "release/$PLATFORM" \
+            --platform "$PLATFORM" \
+            --target "$TARGET" \
+            --version "$DESKTOP_VERSION" \
             --commit "$GITHUB_SHA" \
-            --start-here packaging/START-HERE.txt \
-            --license LICENSE
-      - uses: actions/upload-artifact@v4
+            --run-id "$GITHUB_RUN_ID"
+      - name: Generate platform SPDX SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: release/${{ matrix.platform }}
+          format: spdx-json
+          output-file: release/${{ matrix.platform }}/AutoCite-${{ matrix.platform }}.sbom.spdx.json
+          artifact-name: AutoCite-${{ matrix.platform }}.sbom.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Checksum platform SBOM
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run python - <<'PY'
+          import hashlib
+          import os
+          from pathlib import Path
+
+          platform = os.environ["PLATFORM"]
+          path = Path("release") / platform / f"AutoCite-{platform}.sbom.spdx.json"
+          digest = hashlib.sha256(path.read_bytes()).hexdigest()
+          path.with_name(f"{path.name}.sha256").write_text(
+              f"{digest}  {path.name}\n", encoding="utf-8"
+          )
+          print(f"verified {path.name}: {digest}")
+          PY
+      - name: Upload platform release bundle
+        uses: actions/upload-artifact@v7
         with:
           name: AutoCite-${{ matrix.platform }}
-          path: release/*
+          path: release/${{ matrix.platform }}/*
           if-no-files-found: error
+          retention-days: 14
 
   build-python:
+    name: Build Python package
     needs: verify
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.12"
-      - run: uv sync --extra dev
-      - run: uv build
-      - uses: actions/upload-artifact@v4
+      - name: Synchronize locked Python environment
+        run: uv sync --frozen --extra dev
+      - name: Build and describe Python distributions
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv build
+          mkdir -p release/python
+          cp dist/* release/python/
+          uv run python - <<'PY'
+          import hashlib
+          import json
+          import tomllib
+          from pathlib import Path
+
+          output = Path("release/python")
+          assets = []
+          for path in sorted(output.iterdir()):
+              if not path.is_file():
+                  continue
+              digest = hashlib.sha256(path.read_bytes()).hexdigest()
+              path.with_name(f"{path.name}.sha256").write_text(
+                  f"{digest}  {path.name}\n", encoding="utf-8"
+              )
+              assets.append(
+                  {"filename": path.name, "bytes": path.stat().st_size, "sha256": digest}
+              )
+          version = tomllib.load(open("pyproject.toml", "rb"))["project"]["version"]
+          manifest = {
+              "schema_version": 1,
+              "product": "AutoCite Python",
+              "version": version,
+              "commit": __import__("os").environ["GITHUB_SHA"],
+              "workflow_run_id": __import__("os").environ["GITHUB_RUN_ID"],
+              "assets": assets,
+          }
+          (output / "AutoCite-python.manifest.json").write_text(
+              json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+          )
+          PY
+      - name: Upload Python release bundle
+        uses: actions/upload-artifact@v7
         with:
           name: AutoCite-python
-          path: dist/*
+          path: release/python/*
           if-no-files-found: error
+          retention-days: 14
 
   release:
+    name: Publish attested desktop prerelease
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [build-desktop, build-python]
-    runs-on: ubuntu-latest
+    needs: [verify, build-desktop, build-python]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
     permissions:
       contents: write
+      attestations: write
+      id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: astral-sh/setup-uv@v6
-        with:
-          python-version: "3.12"
-      - uses: actions/download-artifact@v4
+      - name: Download all verified release bundles
+        uses: actions/download-artifact@v8
         with:
           pattern: AutoCite-*
           path: release
           merge-multiple: true
-      - name: Read and validate release version
-        shell: bash
+      - name: Normalize downloaded artifact layout
         run: |
-          VERSION=$(uv run python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
-          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Invalid release version: $VERSION" >&2
-            exit 1
-          fi
-          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-          echo "TAG=v$VERSION" >> "$GITHUB_ENV"
-      - name: Verify release archives, checksums, and manifests
+          python - <<'PY'
+          from pathlib import Path
+
+          root = Path("release")
+          for path in sorted(root.rglob("*")):
+              if not path.is_file() or path.parent == root:
+                  continue
+              destination = root / path.name
+              if destination.exists():
+                  raise RuntimeError(f"duplicate release filename: {destination.name}")
+              path.replace(destination)
+          for directory in sorted(
+              (path for path in root.rglob("*") if path.is_dir()),
+              key=lambda path: len(path.parts),
+              reverse=True,
+          ):
+              directory.rmdir()
+          PY
+      - name: Generate source SPDX SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: spdx-json
+          output-file: release/AutoCite-source.sbom.spdx.json
+          artifact-name: AutoCite-source.sbom.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Verify release assets and create aggregate manifest
+        env:
+          DESKTOP_VERSION: ${{ needs.verify.outputs.desktop-version }}
         run: |
           python - <<'PY'
           import hashlib
           import json
-          import re
-          import stat
-          import zipfile
-          from pathlib import Path, PurePosixPath
+          import os
+          from pathlib import Path
 
-          device_name = re.compile(
-              r"^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$", re.IGNORECASE
-          )
-          archives = sorted(Path("release").glob("*.zip"))
-          assert len(archives) == 3, f"expected 3 portable archives, found {len(archives)}"
-          for archive in archives:
-              checksum = archive.with_suffix(archive.suffix + ".sha256")
-              manifest = archive.with_name(
-                  archive.name.removesuffix(".zip") + ".manifest.json"
-              )
-              assert checksum.is_file(), f"missing checksum for {archive.name}"
-              assert manifest.is_file(), f"missing manifest for {archive.name}"
-              expected = checksum.read_text(encoding="utf-8").split()[0]
-              actual = hashlib.sha256(archive.read_bytes()).hexdigest()
-              assert actual == expected, f"checksum mismatch for {archive.name}"
-              metadata = json.loads(manifest.read_text(encoding="utf-8"))
-              assert metadata["archive_sha256"] == actual
-              assert metadata["portable"] is True
-              assert metadata["requires_installer"] is False
-              assert metadata["requires_python"] is False
-              assert metadata["version"] == archive.name.rsplit("-v", 1)[1][:-4]
+          root = Path("release")
+          expected_platforms = {
+              "windows-x64",
+              "macos-x64",
+              "macos-arm64",
+              "linux-x64",
+          }
+          for platform in sorted(expected_platforms):
+              manifest_path = root / f"AutoCite-{platform}.manifest.json"
+              assert manifest_path.is_file(), f"missing {manifest_path.name}"
+              manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+              assert manifest["platform"] == platform
+              assert manifest["version"] == os.environ["DESKTOP_VERSION"]
+              assert manifest["commit"] == os.environ["GITHUB_SHA"]
+              assert manifest["assets"], f"{platform} emitted no installers"
+              for asset in manifest["assets"]:
+                  path = root / asset["filename"]
+                  assert path.is_file(), f"missing {path.name}"
+                  digest = hashlib.sha256(path.read_bytes()).hexdigest()
+                  assert digest == asset["sha256"], f"checksum mismatch for {path.name}"
+                  checksum = root / f"{path.name}.sha256"
+                  assert checksum.is_file(), f"missing {checksum.name}"
+                  assert checksum.read_text(encoding="utf-8").split()[0] == digest
 
-              seen: set[str] = set()
-              with zipfile.ZipFile(archive) as bundle:
-                  for member in bundle.infolist():
-                      raw = member.filename.replace("\\", "/")
-                      path = PurePosixPath(raw)
-                      assert raw not in seen, f"duplicate archive member: {raw}"
-                      seen.add(raw)
-                      assert not path.is_absolute(), f"absolute archive path: {raw}"
-                      assert ".." not in path.parts, f"archive traversal path: {raw}"
-                      assert not raw.startswith(("//", "\\\\")), f"device path: {raw}"
-                      assert not any(
-                          part.endswith(":") or device_name.match(part.rstrip(". "))
-                          for part in path.parts
-                      ), f"unsafe Windows archive path: {raw}"
-                      mode = (member.external_attr >> 16) & 0o170000
-                      assert mode != stat.S_IFLNK, f"symlink archive member: {raw}"
-                  required = {
-                      "AutoCite/START HERE.txt",
-                      "AutoCite/LICENSE.txt",
-                      "AutoCite/BUILD-MANIFEST.json",
+          python_manifest = root / "AutoCite-python.manifest.json"
+          assert python_manifest.is_file(), "missing Python release manifest"
+          source_sbom = root / "AutoCite-source.sbom.spdx.json"
+          assert source_sbom.is_file(), "missing source SBOM"
+
+          files = []
+          for path in sorted(root.iterdir()):
+              if not path.is_file() or path.name in {
+                  "AutoCite-release.manifest.json",
+                  "SHA256SUMS.txt",
+              }:
+                  continue
+              files.append(
+                  {
+                      "filename": path.name,
+                      "bytes": path.stat().st_size,
+                      "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
                   }
-                  assert required <= seen, f"missing required files in {archive.name}"
-              print(f"verified {archive.name}")
+              )
+          aggregate = {
+              "schema_version": 1,
+              "product": "AutoCite",
+              "desktop_version": os.environ["DESKTOP_VERSION"],
+              "commit": os.environ["GITHUB_SHA"],
+              "workflow_run_id": os.environ["GITHUB_RUN_ID"],
+              "platforms": sorted(expected_platforms),
+              "prerelease": True,
+              "files": files,
+          }
+          aggregate_path = root / "AutoCite-release.manifest.json"
+          aggregate_path.write_text(
+              json.dumps(aggregate, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+          )
+
+          checksums = []
+          for path in sorted(root.iterdir()):
+              if path.is_file() and path.name != "SHA256SUMS.txt":
+                  checksums.append(
+                      f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}"
+                  )
+          (root / "SHA256SUMS.txt").write_text(
+              "\n".join(checksums) + "\n", encoding="utf-8"
+          )
+          print(f"verified {len(checksums)} release files")
           PY
-      - name: Create or verify immutable version tag
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Attest release artifacts and SPDX SBOM
+        uses: actions/attest@v4
+        with:
+          subject-path: release/*
+          sbom-path: release/AutoCite-source.sbom.spdx.json
+      - name: Select immutable per-commit prerelease tag
         shell: bash
         run: |
+          set -euo pipefail
+          VERSION="${{ needs.verify.outputs.desktop-version }}"
+          SHORT_SHA="${GITHUB_SHA::12}"
+          TAG="desktop-v${VERSION}-${SHORT_SHA}"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "SHORT_SHA=$SHORT_SHA" >> "$GITHUB_ENV"
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+      - name: Create or verify immutable release tag
+        shell: bash
+        run: |
+          set -euo pipefail
           if git fetch origin "refs/tags/$TAG:refs/tags/$TAG" 2>/dev/null; then
-            EXISTING_COMMIT=$(git rev-list -n 1 "$TAG")
+            EXISTING_COMMIT="$(git rev-list -n 1 "$TAG")"
             if [[ "$EXISTING_COMMIT" != "$GITHUB_SHA" ]]; then
-              echo "Tag $TAG already points to $EXISTING_COMMIT, not $GITHUB_SHA." >&2
+              echo "Tag $TAG points to $EXISTING_COMMIT, not $GITHUB_SHA." >&2
               exit 1
             fi
-            echo "Verified existing immutable tag $TAG at $GITHUB_SHA."
           else
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git tag -a "$TAG" "$GITHUB_SHA" -m "AutoCite $VERSION"
+            git tag -a "$TAG" "$GITHUB_SHA" -m "AutoCite Desktop $VERSION ($SHORT_SHA)"
             git push origin "$TAG"
           fi
-      - name: Create or update GitHub Release assets
+      - name: Write automated release notes
+        shell: bash
+        run: |
+          cat > "$RUNNER_TEMP/autocite-release-notes.md" <<EOF
+          Automated local-first AutoCite Desktop prerelease for commit \
+          \`$GITHUB_SHA\`.
+
+          Included assets:
+          - Windows x64 installers
+          - macOS Intel disk image
+          - macOS Apple Silicon disk image
+          - Linux x64 AppImage and Debian package
+          - Python wheel and source distribution
+          - SHA-256 checksums, provenance manifests, and SPDX SBOMs
+
+          The desktop binaries are unsigned prerelease artifacts. Verify downloads with \
+          \`SHA256SUMS.txt\` and GitHub artifact attestations before use.
+          EOF
+      - name: Create or refresh GitHub prerelease
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
+          set -euo pipefail
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" release/* --clobber
             gh release edit "$TAG" \
-              --latest \
-              --title "AutoCite $TAG" \
-              --notes-file packaging/RELEASE-NOTES.md
+              --prerelease \
+              --title "AutoCite Desktop $VERSION ($SHORT_SHA)" \
+              --notes-file "$RUNNER_TEMP/autocite-release-notes.md"
           else
             gh release create "$TAG" release/* \
               --verify-tag \
-              --latest \
-              --title "AutoCite $TAG" \
-              --notes-file packaging/RELEASE-NOTES.md
+              --prerelease \
+              --title "AutoCite Desktop $VERSION ($SHORT_SHA)" \
+              --notes-file "$RUNNER_TEMP/autocite-release-notes.md"
           fi
+
+  release-gate:
+    name: Cross-platform release gate
+    if: always() && github.event_name == 'pull_request'
+    needs: [verify, build-desktop, build-python]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require verification and every platform build
+        env:
+          VERIFY: ${{ needs.verify.result }}
+          DESKTOP: ${{ needs.build-desktop.result }}
+          PYTHON: ${{ needs.build-python.result }}
+        run: |
+          test "$VERIFY" = success
+          test "$DESKTOP" = success
+          test "$PYTHON" = success
