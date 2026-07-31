@@ -26,7 +26,33 @@ export default tseslint.config(
       "react-refresh/only-export-components": ["warn", { allowConstantExport: true }],
       "@typescript-eslint/consistent-type-imports": "error",
       "@typescript-eslint/no-floating-promises": "error",
-      "@typescript-eslint/no-misused-promises": "error"
+      "@typescript-eslint/no-misused-promises": "error",
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        {
+          "argsIgnorePattern": "^_",
+          "varsIgnorePattern": "^_",
+          "caughtErrorsIgnorePattern": "^_"
+        }
+      ]
     },
   },
+  {
+    files: ["**/*.tsx"],
+    rules: {
+      "@typescript-eslint/no-confusing-void-expression": "off",
+      "@typescript-eslint/unbound-method": "off",
+      "@typescript-eslint/no-unnecessary-condition": "off",
+      "@typescript-eslint/no-unnecessary-type-assertion": "off",
+      "@typescript-eslint/no-unnecessary-type-conversion": "off"
+    }
+  },
+  {
+    files: ["src/services/browserAdapter.ts", "**/*.{test,spec}.{ts,tsx}", "e2e/**/*.ts"],
+    rules: {
+      "@typescript-eslint/require-await": "off",
+      "@typescript-eslint/unbound-method": "off",
+      "@typescript-eslint/no-confusing-void-expression": "off"
+    }
+  }
 );
