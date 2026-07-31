@@ -1,7 +1,11 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+from pathlib import Path
+
 from PyInstaller.utils.hooks import collect_all
 
+
+root = Path(SPECPATH).resolve().parent.parent
 
 packages = (
     "autocite_mcp",
@@ -31,8 +35,8 @@ for package in packages:
     hiddenimports += package_hiddenimports
 
 analysis = Analysis(
-    ["packaging/autocite-sidecar.py"],
-    pathex=["src"],
+    [str(root / "packaging/autocite-sidecar.py")],
+    pathex=[str(root / "src")],
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
