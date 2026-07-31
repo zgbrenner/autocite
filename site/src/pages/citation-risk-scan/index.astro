@@ -1,0 +1,56 @@
+---
+import DownloadCta from "../../components/DownloadCta.astro";
+import RiskScanner from "../../components/RiskScanner.astro";
+import SiteLayout from "../../layouts/SiteLayout.astro";
+import { buildBreadcrumbJsonLd } from "../../lib/seo";
+---
+
+<SiteLayout
+  title="Free private citation risk scan"
+  description="Check a short legal citation sample in your browser. AutoCite's limited preview never uploads the pasted text and never invents missing citation facts."
+  pathname="/citation-risk-scan/"
+  jsonLd={buildBreadcrumbJsonLd([
+    { name: "AutoCite", path: "/" },
+    { name: "Citation Risk Scan", path: "/citation-risk-scan/" },
+  ])}
+>
+  <header class="page-hero">
+    <div class="shell page-hero-grid">
+      <div>
+        <h1>Find obvious citation risks without sending your text anywhere.</h1>
+        <p>
+          This browser-only preview checks a deliberately small set of mechanical patterns. It is designed to demonstrate AutoCite's privacy and correction boundaries, not replace full-document review.
+        </p>
+      </div>
+      <aside class="page-aside">
+        <strong>No upload endpoint exists.</strong>
+        <p>The scanner runs after the page loads, stores nothing, and shares only issue counts and categories.</p>
+      </aside>
+    </div>
+  </header>
+
+  <section class="section-tight">
+    <div class="shell">
+      <RiskScanner />
+    </div>
+  </section>
+
+  <section class="section section-soft">
+    <div class="shell split">
+      <div class="split-copy">
+        <h2>What this preview can check</h2>
+        <p>It normalizes citation-shaped U.S.C. and C.F.R. abbreviations, section-symbol spacing, and narrow Id. short-form patterns.</p>
+      </div>
+      <div class="principles">
+        <article class="principle"><span class="principle-icon">✓</span><div><strong>Mechanical only</strong><p>No source facts, reporter data, years, courts, or pincites are generated.</p></div></article>
+        <article class="principle"><span class="principle-icon">✓</span><div><strong>Exact spans</strong><p>Every preview change points to the original characters it proposes to replace.</p></div></article>
+        <article class="principle"><span class="principle-icon">×</span><div><strong>Not a citator</strong><p>The preview does not determine good-law status, treatment, or precedential force.</p></div></article>
+        <article class="principle"><span class="principle-icon">×</span><div><strong>Not full review</strong><p>Download AutoCite for document structure, citation graphs, decisions, exports, and broader rule coverage.</p></div></article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section-tight">
+    <div class="shell"><DownloadCta heading="Ready to review the whole document?" /></div>
+  </section>
+</SiteLayout>
