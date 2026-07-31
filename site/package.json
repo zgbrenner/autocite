@@ -16,7 +16,8 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "audit:seo": "node scripts/audit-seo.mjs",
-    "verify": "npm run lint && npm test && npm run build && npm run audit:seo && npm run test:e2e"
+    "lighthouse:ci": "lhci autorun",
+    "verify": "npm run lint && npm test && npm run build && npm run audit:seo && npm run test:e2e && npm run lighthouse:ci"
   },
   "dependencies": {
     "@astrojs/rss": "^4.0.0",
@@ -25,6 +26,7 @@
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.0",
+    "@lhci/cli": "^0.15.0",
     "@playwright/test": "^1.56.0",
     "@types/node": "^22.0.0",
     "cheerio": "^1.1.0",
