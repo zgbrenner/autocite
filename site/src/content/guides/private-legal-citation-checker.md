@@ -1,6 +1,6 @@
 ---
 title: "How to Choose a Private Legal Citation Checker"
-description: "A practical privacy checklist for evaluating legal citation software, including document uploads, telemetry, local processing, model downloads, source retrieval, and hosted MCP endpoints."
+description: "A practical privacy checklist for evaluating document uploads, telemetry, local processing, model setup, source retrieval, storage, and hosted legal citation tools."
 publishedAt: 2026-07-31
 audience: lawyers
 keywords:
@@ -32,7 +32,7 @@ Look for a direct answer to these questions:
 - Is document text ever included in diagnostic logs?
 - Can the network behavior be inspected?
 
-AutoCite is designed without application telemetry. Its open-source code allows reviewers to inspect the desktop bridge, local backend, and optional network boundaries.
+AutoCite is designed without application telemetry. Its open-source code allows reviewers to inspect the desktop workflow, local backend, and optional network boundaries.
 
 ## 3. Are optional network features truly optional?
 
@@ -54,11 +54,11 @@ A product may call a model "local" while downloading weights during the first co
 
 Prefer products that separate setup from review. AutoCite does not silently download model weights during ordinary document review. The optional small-model layer can be installed deliberately, and deterministic review remains available without it.
 
-## 5. Is the local service authenticated?
+## 5. Is a local service exposed publicly?
 
-Many desktop applications run a small service on the user's computer. That service should not listen publicly or accept unauthenticated requests from any local process.
+Some legal tools run a service on the user's computer or an internal server. That service should not listen publicly or accept unauthenticated requests by default.
 
-AutoCite's Tauri desktop application launches its bundled backend on a random loopback port with a unique launch token. Hosted MCP deployments bind to loopback by default; remote binding requires explicit enablement and an API token.
+AutoCite's server binds to loopback by default. Remote binding requires both explicit remote enablement and an API token, preventing an accidental unauthenticated public deployment.
 
 ## 6. What is stored, and where?
 
