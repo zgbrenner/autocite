@@ -2,10 +2,12 @@
 
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_all
+from PyInstaller.utils.hooks import collect_all, get_package_paths
 
 
 root = Path(SPECPATH).resolve().parent
+_, docx_package_path = get_package_paths("docx")
+docx_package_dir = Path(docx_package_path)
 
 packages = (
     "autocite_mcp",
@@ -35,6 +37,7 @@ for package in packages:
     datas += package_datas
     binaries += package_binaries
     hiddenimports += package_hiddenimports
+datas.append((str(docx_package_dir / "templates"), "docx/templates"))
 
 analysis = Analysis(
     [str(root / "packaging/autocite-sidecar.py")],
