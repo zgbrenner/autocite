@@ -62,9 +62,13 @@ function replaceSummary(
   return [summary, ...documents.filter((item) => item.sessionId !== summary.sessionId)];
 }
 
-function bytesFromBase64(value: string): Uint8Array {
+function bytesFromBase64(value: string): Uint8Array<ArrayBuffer> {
   const binary = atob(value);
-  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
 }
 
 function browserDownload(result: ExportDocumentResult): void {
