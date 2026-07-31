@@ -15,8 +15,18 @@ def test_portable_desktop_spec_resolves_entrypoint_from_repository_root():
 
     assert "root = Path(SPECPATH).resolve().parent" in spec
     assert "parent.parent" not in spec
-    assert 'root / "src/autocite_mcp/desktop_entry.py"' in spec
+    assert 'root / "packaging/autocite-desktop.py"' in spec
     assert 'pathex=[str(root / "src")]' in spec
+
+
+def test_portable_launcher_preserves_autocite_package_context():
+    launcher = (ROOT / "packaging" / "autocite-desktop.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "from autocite_mcp.desktop_entry import run" in launcher
+    assert "raise SystemExit(run())" in launcher
+    assert "from ." not in launcher
 
 
 def test_tauri_sidecar_spec_resolves_entrypoint_from_repository_root():
