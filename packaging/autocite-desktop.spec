@@ -11,11 +11,17 @@ from PyInstaller.utils.hooks import (
 root = Path(SPECPATH).resolve().parent
 _, docx_package_path = get_package_paths("docx")
 docx_package_dir = Path(docx_package_path)
+docx_templates_dir = docx_package_dir / "templates"
 
 datas = collect_data_files("autocite_mcp")
 datas += collect_data_files("courts_db")
 datas += collect_data_files("reporters_db")
-datas.append((str(docx_package_dir / "templates"), "docx/templates"))
+for template_file in sorted(docx_templates_dir.rglob("*")):
+    if not template_file.is_file():
+        continue
+    relative_parent = template_file.relative_to(docx_templates_dir).parent
+    destination = Path("docx/templates") / relative_parent
+    datas.append((str(template_file), destination.as_posix()))
 hiddenimports = collect_submodules("eyecite")
 
 analysis = Analysis(
