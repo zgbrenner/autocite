@@ -14,7 +14,6 @@ from ._docx_preservation_model import (
     DocxValidationError,
     DocxValidationReport,
     PreservedDocxResult,
-    _IndexedPackage,
     _InternalLocation,
 )
 from ._docx_preservation_mutation import (
@@ -78,8 +77,7 @@ def apply_docx_export_plan(
     annotation_mappings: list[
         tuple[PlannedAnnotation, _InternalLocation, int, int]
     ] = []
-    unanchored: list[PlannedAnnotation] = []
-    used_annotation_nodes: set[int] = set()
+    unanchored_annotations: list[dict[str, object]] = []
     for annotation in plan.annotations:
         try:
             location, local_start, local_end = _map_single_text_node(
@@ -87,75 +85,89 @@ def apply_docx_export_plan(
                 start=annotation.start,
                 end=annotation.end,
                 expected=annotation.original,
-                purpose=f"annotation {annotation.item_id}",
+                purpose=f"review annotation {annotation.item_id}",
             )
-        except DocxMappingError:
-            unanchored.append(annotation)
+        except DocxMappingError as exc:
+            unanchored_annotations.append(
+                {
+                    **annotation.as_dict(),
+                    "reason": str(exc),
+                }
+            )
             continue
-        node_id = id(location.node)
-        if (
-            location.public.part_name != "word/document.xml"
-            or node_id in edit_nodes
-            or node_id in used_annotation_nodes
-        ):
-            unanchored.append(annotation)
+        if location.node is None or id(location.node) in edit_nodes:
+            unanchored_annotations.append(
+                {
+                    **annotation.as_dict(),
+                    "reason": (
+                        "Annotation shares text with an accepted edit or cannot "
+                        "be anchored to a single safe Word text node."
+                    ),
+                }
+            )
             continue
-        used_annotation_nodes.add(node_id)
         annotation_mappings.append(
             (annotation, location, local_start, local_end)
         )
 
-    modified_parts: set[str] = set()
-    grouped_edits: dict[int, list[tuple[PlannedTextEdit, int, int]]] = {}
-    edit_locations: dict[int, _InternalLocation] = {}
-    for edit, location, local_start, local_end in edit_mappings:
-        node_key = id(location.node)
-        grouped_edits.setdefault(node_key, []).append((edit, local_start, local_end))
-        edit_locations[node_key] = location
-
-    next_revision_id = _max_numeric_attribute(
-        indexed.roots.values(), f"{W}id"
-    ) + 1
-    for node_key, edits in grouped_edits.items():
-        location = edit_locations[node_key]
-        next_revision_id = _replace_run_with_edits(
-            location,
-            edits,
-            tracked=tracked,
-            next_revision_id=next_revision_id,
-        )
-        modified_parts.add(location.public.part_name)
-
-    anchored_ids: list[str] = []
+    annotation_ids: dict[str, int] = {}
+    comment_id = _max_numeric_attribute(
+        package,
+        W + "id",
+    )
     if annotation_mappings:
-        comments_root, next_comment_id, support_modified = _ensure_comments_support(
-            indexed
-        )
-        modified_parts.update(support_modified)
-        for annotation, location, local_start, local_end in annotation_mappings:
-            _anchor_comment(
-                location,
-                local_start=local_start,
-                local_end=local_end,
-                comment_id=next_comment_id,
-            )
+        comments_root, comments_part = _ensure_comments_support(package)
+        for annotation, _location, _start, _end in annotation_mappings:
+            comment_id += 1
+            annotation_ids[annotation.item_id] = comment_id
             _append_comment(
                 comments_root,
                 annotation,
-                comment_id=next_comment_id,
+                comment_id=comment_id,
             )
-            next_comment_id += 1
-            anchored_ids.append(annotation.item_id)
-            modified_parts.add(location.public.part_name)
-            modified_parts.add("word/comments.xml")
+        package.parts["word/comments.xml"] = comments_part
 
-    output = _write_package(indexed, modified_parts)
-    validation = validate_docx_package(output, raise_on_error=True)
+    for annotation, location, local_start, local_end in sorted(
+        annotation_mappings,
+        key=lambda item: (item[1].part_name, item[1].order, item[2]),
+        reverse=True,
+    ):
+        _anchor_comment(
+            location,
+            local_start,
+            local_end,
+            comment_id=annotation_ids[annotation.item_id],
+        )
+
+    revision_id = _max_numeric_attribute(package, W + "id")
+    applied_edit_ids: list[str] = []
+    for edit, location, local_start, local_end in sorted(
+        edit_mappings,
+        key=lambda item: (item[1].part_name, item[1].order, item[2]),
+        reverse=True,
+    ):
+        revision_id += 1
+        _replace_run_with_edits(
+            location,
+            local_start,
+            local_end,
+            edit,
+            tracked=tracked,
+            revision_id=revision_id,
+        )
+        applied_edit_ids.append(edit.item_id)
+
+    output = _write_package(package)
+    validation = validate_docx_package(output)
+    if not validation.valid:
+        raise DocxValidationError(
+            "Generated DOCX did not pass package validation: "
+            + "; ".join(validation.errors)
+        )
     return PreservedDocxResult(
         payload=output,
-        applied_edit_ids=tuple(edit.item_id for edit, _, _, _ in edit_mappings),
-        anchored_annotation_ids=tuple(anchored_ids),
-        unanchored_annotations=tuple(unanchored),
-        modified_parts=tuple(sorted(modified_parts)),
+        applied_edit_ids=tuple(sorted(applied_edit_ids)),
+        anchored_annotation_ids=tuple(sorted(annotation_ids)),
+        unanchored_annotations=tuple(unanchored_annotations),
         validation=validation,
     )
