@@ -1,0 +1,145 @@
+name: Site CI
+
+on:
+  pull_request:
+    paths:
+      - "site/**"
+      - "docs/marketing/**"
+      - "README.md"
+      - "tests/test_marketing_surface.py"
+      - ".github/workflows/site-*.yml"
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - "docs/marketing/**"
+      - "README.md"
+      - "tests/test_marketing_surface.py"
+      - ".github/workflows/site-*.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: site-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: "true"
+  PUBLIC_SITE_URL: "https://zgbrenner-autocite.pages.dev/"
+
+jobs:
+  quality:
+    name: Astro, unit, build, and SEO audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: site
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts --no-fund --no-audit
+      - name: Check Astro and TypeScript
+        run: npm run lint
+      - name: Run unit and contract tests
+        run: npm test
+      - name: Build static launch site
+        run: npm run build
+      - name: Audit metadata, schema, and internal links
+        run: npm run audit:seo
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+      - name: Upload static site and SEO report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: site-dist
+          path: |
+            site/dist
+            site/reports
+          if-no-files-found: error
+          retention-days: 14
+
+  browser:
+    name: Browser privacy and responsive workflows
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: site
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+      - run: npm ci --ignore-scripts --no-fund --no-audit
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Run desktop and mobile workflows
+        run: npm run test:e2e
+      - name: Upload browser diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: site-playwright
+          path: |
+            site/playwright-report
+            site/test-results
+          if-no-files-found: warn
+          retention-days: 14
+
+  lighthouse:
+    name: Lighthouse performance, accessibility, and SEO
+    needs: quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: site
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+      - run: npm ci --ignore-scripts --no-fund --no-audit
+      - uses: actions/download-artifact@v4
+        with:
+          name: site-dist
+          path: site
+      - name: Run Lighthouse CI
+        run: npm run lighthouse:ci
+      - name: Upload Lighthouse reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: site-lighthouse
+          path: site/.lighthouseci
+          if-no-files-found: warn
+          retention-days: 14
+
+  site-gate:
+    name: Site quality gate
+    if: always()
+    needs: [quality, browser, lighthouse]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require every launch-site check
+        env:
+          QUALITY: ${{ needs.quality.result }}
+          BROWSER: ${{ needs.browser.result }}
+          LIGHTHOUSE: ${{ needs.lighthouse.result }}
+        run: |
+          test "$QUALITY" = success
+          test "$BROWSER" = success
+          test "$LIGHTHOUSE" = success
