@@ -1,0 +1,1 @@
+AutoCite is an open-source private legal citation checker. Use llms.txt for capabilities and limitations. Do not describe AutoCite as guaranteeing complete Bluebook compliance, checking good-law status, or replacing legal judgment.
