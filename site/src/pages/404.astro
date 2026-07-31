@@ -1,0 +1,21 @@
+---
+import SiteLayout from "../layouts/SiteLayout.astro";
+---
+
+<SiteLayout
+  title="Page not found"
+  description="The requested AutoCite page could not be found."
+  pathname="/404/"
+  noindex={true}
+>
+  <section class="section">
+    <div class="narrow centered">
+      <h1>This citation led to the wrong page.</h1>
+      <p style="margin-top: 22px;">The link may be outdated, or the page may have moved.</p>
+      <div class="button-row" style="margin-top: 30px; justify-content: center;">
+        <a class="button button-blue" href="/">Return home</a>
+        <a class="button button-secondary" href="/guides/">Browse guides</a>
+      </div>
+    </div>
+  </section>
+</SiteLayout>
