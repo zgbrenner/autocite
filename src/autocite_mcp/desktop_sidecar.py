@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import sys
@@ -23,9 +24,20 @@ def sidecar_self_test() -> dict[str, Any]:
     }
 
 
+def sidecar_preservation_self_test() -> dict[str, Any]:
+    """Exercise the preservation-first DOCX path inside the packaged sidecar."""
+    from .desktop_preservation import run_preservation_self_test
+
+    return asyncio.run(run_preservation_self_test())
+
+
 def main() -> None:
     """Run the authenticated loopback service bundled with the Tauri shell."""
-    if "--self-test" in sys.argv[1:]:
+    arguments = sys.argv[1:]
+    if "--self-test-preservation" in arguments:
+        print(json.dumps(sidecar_preservation_self_test(), sort_keys=True))
+        return
+    if "--self-test" in arguments:
         print(json.dumps(sidecar_self_test(), sort_keys=True))
         return
 
