@@ -14,7 +14,7 @@ def test_dependabot_monitors_every_runtime_and_workflow_ecosystem():
     config = read(".github/dependabot.yml")
 
     for ecosystem, directory in (
-        ("pip", "/"),
+        ("uv", "/"),
         ("npm", "/desktop"),
         ("cargo", "/desktop/src-tauri"),
         ("github-actions", "/"),
