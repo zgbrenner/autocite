@@ -1,5 +1,12 @@
 import { Command, MagnifyingGlass } from "@phosphor-icons/react";
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 export interface AppCommand {
   id: string;
@@ -32,27 +39,30 @@ export function CommandPalette({ open, commands, onClose }: CommandPaletteProps)
           ),
     [commands, deferredQuery],
   );
+  const close = useCallback(() => {
+    setQuery("");
+    onClose();
+  }, [onClose]);
 
   useEffect(() => {
     if (!open) return;
-    setQuery("");
     queueMicrotask(() => inputRef.current?.focus());
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") close();
       if (event.key === "Enter" && filtered[0] !== undefined) {
         event.preventDefault();
         filtered[0].run();
-        onClose();
+        close();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [filtered, onClose, open]);
+  }, [close, filtered, open]);
 
   if (!open) return null;
 
   return (
-    <div className="palette-backdrop" role="presentation" onMouseDown={onClose}>
+    <div className="palette-backdrop" role="presentation" onMouseDown={close}>
       <section
         className="command-palette"
         role="dialog"
@@ -84,7 +94,7 @@ export function CommandPalette({ open, commands, onClose }: CommandPaletteProps)
                 className={index === 0 ? "is-highlighted" : ""}
                 onClick={() => {
                   command.run();
-                  onClose();
+                  close();
                 }}
               >
                 <Command size={18} />
