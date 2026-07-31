@@ -23,13 +23,18 @@ def test_dependabot_monitors_every_runtime_and_workflow_ecosystem():
         assert f'directory: "{directory}"' in config
 
 
-def test_pull_requests_receive_dependency_review():
+def test_pull_requests_receive_native_review_and_blocking_audit_fallbacks():
     workflow = read(".github/workflows/dependency-review.yml")
 
     assert "pull_request:" in workflow
     assert "actions/dependency-review-action@v5" in workflow
     assert "fail-on-severity: high" in workflow
     assert "deny-licenses:" in workflow
+    assert "continue-on-error: true" in workflow
+    assert "uv audit" in workflow
+    assert "npm audit --prefix desktop" in workflow
+    assert "cargo install cargo-audit --locked" in workflow
+    assert "cargo audit --file desktop/src-tauri/Cargo.lock" in workflow
 
 
 def test_codeql_scans_python_javascript_and_rust_with_current_action():
