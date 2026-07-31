@@ -3,7 +3,7 @@ export const SITE = {
   category: "Private legal citation checker",
   shortDescription:
     "Fix supported Bluebook citation problems without rewriting your document or uploading confidential legal work.",
-  defaultSiteUrl: "https://zgbrenner.github.io/autocite/",
+  defaultSiteUrl: "https://zgbrenner-autocite.pages.dev/",
   repositoryUrl: "https://github.com/zgbrenner/autocite",
   releaseUrl: "https://github.com/zgbrenner/autocite/releases/latest",
   licenseUrl: "https://github.com/zgbrenner/autocite/blob/main/LICENSE",
@@ -17,4 +17,4 @@ export const SITE = {
   ],
 } as const;
 
-export const SITE_URL = import.meta.env?.PUBLIC_SITE_URL ?? SITE.defaultSiteUrl;
+export const SITE_URL = import.meta.env.PUBLIC_SITE_URL ?? SITE.defaultSiteUrl;
