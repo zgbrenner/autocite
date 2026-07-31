@@ -118,7 +118,9 @@ describe("AutoCite desktop workspace", () => {
     );
     expect(screen.getByRole("tab", { name: "Insert" })).toBeVisible();
     expect(screen.getByRole("tab", { name: "Review" })).toBeVisible();
-    expect(screen.getByRole("textbox", { name: "Document editor" })).toBeVisible();
+    expect(
+      await screen.findByRole("textbox", { name: "Document editor" }),
+    ).toBeVisible();
     expect(screen.getByRole("heading", { name: "AutoCite review" })).toBeVisible();
     expect(
       screen.getByRole("button", { name: /Motion to dismiss/i }),
