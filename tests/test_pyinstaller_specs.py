@@ -29,6 +29,13 @@ def test_portable_launcher_preserves_autocite_package_context():
     assert "from ." not in launcher
 
 
+def test_portable_spec_bundles_eyecite_database_resources():
+    spec = read_spec("autocite-desktop.spec")
+
+    assert 'collect_data_files("courts_db")' in spec
+    assert 'collect_data_files("reporters_db")' in spec
+
+
 def test_tauri_sidecar_spec_resolves_entrypoint_from_repository_root():
     spec = read_spec("autocite-sidecar.spec")
 
@@ -36,3 +43,10 @@ def test_tauri_sidecar_spec_resolves_entrypoint_from_repository_root():
     assert "parent.parent" not in spec
     assert 'root / "packaging/autocite-sidecar.py"' in spec
     assert 'pathex=[str(root / "src")]' in spec
+
+
+def test_tauri_sidecar_bundles_eyecite_database_resources():
+    spec = read_spec("autocite-sidecar.spec")
+
+    assert '"courts_db"' in spec
+    assert '"reporters_db"' in spec
