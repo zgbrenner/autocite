@@ -10,7 +10,9 @@ import {
 describe("SEO helpers", () => {
   it("normalizes canonical paths without preserving tracking parameters", () => {
     expect(normalizePath("guides/privacy?utm_source=test#section")).toBe("/guides/privacy/");
-    expect(buildCanonical("/privacy")).toBe("https://zgbrenner.github.io/privacy/");
+    expect(buildCanonical("/privacy")).toBe(
+      "https://zgbrenner.github.io/autocite/privacy/",
+    );
   });
 
   it("keeps page titles unique while avoiding a duplicate brand suffix", () => {
