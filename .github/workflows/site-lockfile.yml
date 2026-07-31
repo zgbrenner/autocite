@@ -1,0 +1,45 @@
+name: Generate site lockfile
+
+on:
+  push:
+    branches: [codex/seo-growth-launch]
+    paths:
+      - "site/package.json"
+      - ".github/workflows/site-lockfile.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: site-lockfile-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  lock:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: codex/seo-growth-launch
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: Generate exact npm lockfile
+        working-directory: site
+        run: npm install --package-lock-only --ignore-scripts --no-fund --no-audit
+      - name: Commit lockfile when changed
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add site/package-lock.json
+          if git diff --cached --quiet; then
+            echo "Site lockfile is already current."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "build(site): lock npm dependencies"
+          git push origin HEAD:codex/seo-growth-launch
