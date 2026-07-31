@@ -10,18 +10,6 @@ def read_spec(name: str) -> str:
     return (ROOT / "packaging" / name).read_text(encoding="utf-8")
 
 
-def assert_docx_template_mapping(spec: str) -> None:
-    assert "get_package_paths" in spec
-    assert 'get_package_paths("docx")' in spec
-    assert 'docx_templates_dir = docx_package_dir / "templates"' in spec
-    assert 'sorted(docx_templates_dir.rglob("*"))' in spec
-    assert "template_file.is_file()" in spec
-    assert "template_file.relative_to(docx_templates_dir).parent" in spec
-    assert 'destination = Path("docx/templates") / relative_parent' in spec
-    assert "datas.append((str(template_file), destination.as_posix()))" in spec
-    assert 'datas.append((str(docx_package_dir / "templates"), "docx/templates"))' not in spec
-
-
 def test_portable_desktop_spec_resolves_entrypoint_from_repository_root():
     spec = read_spec("autocite-desktop.spec")
 
@@ -41,12 +29,13 @@ def test_portable_launcher_preserves_autocite_package_context():
     assert "from ." not in launcher
 
 
-def test_portable_spec_bundles_runtime_data_resources():
+def test_portable_spec_bundles_citation_database_resources():
     spec = read_spec("autocite-desktop.spec")
 
     assert 'collect_data_files("courts_db")' in spec
     assert 'collect_data_files("reporters_db")' in spec
-    assert_docx_template_mapping(spec)
+    assert "get_package_paths" not in spec
+    assert "docx/templates" not in spec
 
 
 def test_tauri_sidecar_spec_resolves_entrypoint_from_repository_root():
@@ -64,4 +53,5 @@ def test_tauri_sidecar_bundles_runtime_data_resources():
     assert '"courts_db"' in spec
     assert '"reporters_db"' in spec
     assert '"docx"' in spec
-    assert_docx_template_mapping(spec)
+    assert "get_package_paths" not in spec
+    assert "docx/templates" not in spec
