@@ -19,6 +19,8 @@ packages = (
     "httpcore",
     "anyio",
     "eyecite",
+    "courts_db",
+    "reporters_db",
     "bs4",
     "lxml",
     "docx",
