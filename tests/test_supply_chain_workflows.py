@@ -27,10 +27,12 @@ def test_pull_requests_receive_native_review_and_blocking_audit_fallbacks():
     workflow = read(".github/workflows/dependency-review.yml")
 
     assert "pull_request:" in workflow
+    assert "dependency-graph/sbom" in workflow
+    assert "if: steps.graph.outputs.available == 'true'" in workflow
     assert "actions/dependency-review-action@v5" in workflow
     assert "fail-on-severity: high" in workflow
     assert "deny-licenses:" in workflow
-    assert "continue-on-error: true" in workflow
+    assert "continue-on-error: true" not in workflow
     assert "uv audit" in workflow
     assert "npm audit --prefix desktop" in workflow
     assert "cargo install cargo-audit --locked" in workflow
