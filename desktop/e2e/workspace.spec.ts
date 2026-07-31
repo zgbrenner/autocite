@@ -11,7 +11,9 @@ test("opens, reviews, and navigates the AutoCite word processor", async ({ page 
   );
   await expect(page.getByRole("textbox", { name: "Document editor" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "AutoCite review" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Motion to dismiss" })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Open Motion to dismiss" }),
+  ).toBeVisible();
 
   await page.screenshot({
     path: "test-results/autocite-workspace.png",
