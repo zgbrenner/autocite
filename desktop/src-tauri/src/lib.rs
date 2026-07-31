@@ -1,13 +1,13 @@
 use std::{
     fs,
     net::TcpListener,
-    path::{Path, PathBuf},
+    path::Path,
     sync::Mutex,
     time::Duration,
 };
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
-use reqwest::{Client, Method, StatusCode};
+use reqwest::{Client, Method};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::{Manager, RunEvent, State};
@@ -97,8 +97,7 @@ fn mime_type_for_path(path: &Path) -> Option<String> {
         .as_deref()
     {
         Some("docx") => Some(
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                .to_string(),
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document".to_string(),
         ),
         Some("pdf") => Some("application/pdf".to_string()),
         Some("md" | "markdown") => Some("text/markdown".to_string()),
@@ -168,9 +167,7 @@ async fn backend_request(
 }
 
 #[tauri::command]
-async fn open_document_file(
-    app: tauri::AppHandle,
-) -> Result<Option<NativeDocumentFile>, String> {
+async fn open_document_file(app: tauri::AppHandle) -> Result<Option<NativeDocumentFile>, String> {
     let selected = app
         .dialog()
         .file()
@@ -188,8 +185,8 @@ async fn open_document_file(
     if metadata.len() > MAX_IMPORT_BYTES {
         return Err("documents are limited to 15 MB".to_string());
     }
-    let bytes = fs::read(&path)
-        .map_err(|error| format!("could not read the selected file: {error}"))?;
+    let bytes =
+        fs::read(&path).map_err(|error| format!("could not read the selected file: {error}"))?;
     let file_name = path
         .file_name()
         .and_then(|name| name.to_str())
@@ -323,7 +320,12 @@ mod tests {
         };
         assert_eq!(validate_backend_request(&valid).unwrap(), Method::POST);
 
-        for path in ["https://example.com", "/mcp", "/app/../health", "/app\nhealth"] {
+        for path in [
+            "https://example.com",
+            "/mcp",
+            "/app/../health",
+            "/app\nhealth",
+        ] {
             let invalid = BackendRequest {
                 method: "GET".to_string(),
                 path: path.to_string(),
@@ -350,6 +352,6 @@ mod tests {
 
     #[test]
     fn successful_status_constant_remains_available() {
-        assert!(StatusCode::OK.is_success());
+        assert!(reqwest::StatusCode::OK.is_success());
     }
 }
