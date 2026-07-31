@@ -1,0 +1,55 @@
+name: Desktop CI
+
+on:
+  pull_request:
+    paths:
+      - "desktop/**"
+      - ".github/workflows/desktop-ci.yml"
+      - ".github/workflows/desktop-release.yml"
+  push:
+    branches: [main]
+    paths:
+      - "desktop/**"
+      - ".github/workflows/desktop-ci.yml"
+      - ".github/workflows/desktop-release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: Frontend contract (Node ${{ matrix.node }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: desktop/package.json
+      - name: Install exact desktop dependencies
+        run: npm install --ignore-scripts
+      - name: Run behavior contract
+        run: npm test
+      - name: Upload contract diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-contract-node-${{ matrix.node }}
+          path: |
+            desktop/coverage
+            desktop/test-results
+          if-no-files-found: ignore
+          retention-days: 7
