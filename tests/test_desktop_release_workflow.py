@@ -23,12 +23,22 @@ def test_tauri_release_workflow_covers_every_supported_desktop_platform():
     assert "packaging/autocite-sidecar.spec" in workflow
     assert "--self-test" in workflow
     assert "scripts/package_tauri_release.py" in workflow
-    assert "npm run prepare:icons --prefix desktop" in workflow
-    rust_test = "cargo test --manifest-path desktop/src-tauri/Cargo.toml --locked"
-    assert rust_test in workflow
-    assert workflow.index("npm run prepare:icons --prefix desktop") < workflow.index(
-        rust_test
-    )
+    assert "cargo test --manifest-path desktop/src-tauri/Cargo.toml --locked" in workflow
+
+
+def test_tauri_context_assets_are_committed_for_rust_tests():
+    icon_root = ROOT / "desktop/src-tauri/icons"
+
+    for filename in (
+        "32x32.png",
+        "128x128.png",
+        "128x128@2x.png",
+        "icon.ico",
+        "icon.icns",
+    ):
+        path = icon_root / filename
+        assert path.is_file(), f"missing committed Tauri icon: {filename}"
+        assert path.stat().st_size > 0, f"empty committed Tauri icon: {filename}"
 
 
 def test_every_successful_main_update_creates_an_attested_prerelease():
