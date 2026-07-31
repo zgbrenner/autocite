@@ -54,7 +54,7 @@ describe("document model", () => {
   it("calculates stable word, character, and page estimates", () => {
     expect(calculateDocumentStats("One two three.\n\nFour five.")).toEqual({
       words: 5,
-      characters: 27,
+      characters: 26,
       estimatedPages: 1,
     });
   });
