@@ -11,7 +11,7 @@ export async function GET(context: APIContext) {
     title: "AutoCite legal citation guides",
     description:
       "Privacy-aware guides to Bluebook citation review, source verification, short forms, and legal citation workflows.",
-    site: context.site ?? "https://zgbrenner.github.io/autocite/",
+    site: context.site ?? "https://zgbrenner-autocite.pages.dev/",
     items: guides.map((guide) => ({
       title: guide.data.title,
       description: guide.data.description,
