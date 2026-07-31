@@ -35,6 +35,10 @@ export default tseslint.config(
           "varsIgnorePattern": "^_",
           "caughtErrorsIgnorePattern": "^_"
         }
+      ],
+      "@typescript-eslint/restrict-template-expressions": [
+        "error",
+        { "allowNumber": true }
       ]
     },
   },
@@ -45,7 +49,8 @@ export default tseslint.config(
       "@typescript-eslint/unbound-method": "off",
       "@typescript-eslint/no-unnecessary-condition": "off",
       "@typescript-eslint/no-unnecessary-type-assertion": "off",
-      "@typescript-eslint/no-unnecessary-type-conversion": "off"
+      "@typescript-eslint/no-unnecessary-type-conversion": "off",
+      "@typescript-eslint/require-await": "off"
     }
   },
   {
