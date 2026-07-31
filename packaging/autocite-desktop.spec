@@ -11,7 +11,7 @@ datas += collect_data_files("reporters_db")
 hiddenimports = collect_submodules("eyecite")
 
 analysis = Analysis(
-    [str(root / "src/autocite_mcp/desktop_entry.py")],
+    [str(root / "packaging/autocite-desktop.py")],
     pathex=[str(root / "src")],
     datas=datas,
     hiddenimports=hiddenimports,
