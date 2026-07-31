@@ -8,6 +8,7 @@ on:
       - "src/autocite_mcp/desktop_sidecar.py"
       - "src/autocite_mcp/pdf_export.py"
       - "tests/test_application_*.py"
+      - "tests/test_desktop_*.py"
       - "tests/test_pdf_export.py"
       - ".github/workflows/desktop-ci.yml"
       - ".github/workflows/desktop.yml"
@@ -19,6 +20,7 @@ on:
       - "src/autocite_mcp/desktop_sidecar.py"
       - "src/autocite_mcp/pdf_export.py"
       - "tests/test_application_*.py"
+      - "tests/test_desktop_*.py"
       - "tests/test_pdf_export.py"
       - ".github/workflows/desktop-ci.yml"
       - ".github/workflows/desktop.yml"
@@ -36,44 +38,6 @@ env:
   NODE_OPTIONS: "--max-old-space-size=4096"
 
 jobs:
-  lockfiles:
-    name: Generate reproducible dependency lockfiles
-    if: >-
-      github.event_name == 'pull_request' &&
-      github.event.pull_request.head.repo.full_name == github.repository
-    permissions:
-      contents: write
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          ref: ${{ github.event.pull_request.head.ref }}
-          fetch-depth: 0
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 24
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Generate exact npm and Cargo lockfiles
-        shell: bash
-        run: |
-          set -euo pipefail
-          npm install --package-lock-only --ignore-scripts --no-fund --no-audit --prefix desktop
-          cargo generate-lockfile --manifest-path desktop/src-tauri/Cargo.toml
-      - name: Commit lockfiles when they changed
-        shell: bash
-        run: |
-          set -euo pipefail
-          git add desktop/package-lock.json desktop/src-tauri/Cargo.lock
-          if git diff --cached --quiet; then
-            echo "Desktop lockfiles are already current."
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "build: lock desktop dependencies"
-          git push origin HEAD:${{ github.event.pull_request.head.ref }}
-
   frontend:
     name: Frontend quality (Node ${{ matrix.node }})
     runs-on: ubuntu-24.04
@@ -91,27 +55,26 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           cache: npm
-          cache-dependency-path: desktop/package.json
-      - name: Install desktop dependencies and generate lockfile
-        run: npm install --ignore-scripts --no-fund --no-audit
+          cache-dependency-path: desktop/package-lock.json
+      - name: Install exact desktop dependencies
+        run: npm ci --ignore-scripts --no-fund --no-audit
       - name: Lint TypeScript and React
         run: npm run lint
       - name: Typecheck
         run: npm run typecheck
-      - name: Run unit tests with coverage
+      - name: Run unit tests with deterministic-core coverage
         run: npm run test:coverage
       - name: Build production frontend
         run: npm run build
       - name: Audit production dependencies
         if: matrix.node == 24
         run: npm audit --omit=dev --audit-level=high
-      - name: Upload frontend diagnostics and lockfile
+      - name: Upload frontend diagnostics
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: desktop-frontend-node-${{ matrix.node }}
           path: |
-            desktop/package-lock.json
             desktop/coverage
             desktop/dist
             desktop/test-results
@@ -131,9 +94,9 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: desktop/package.json
-      - name: Install desktop dependencies
-        run: npm install --ignore-scripts --no-fund --no-audit
+          cache-dependency-path: desktop/package-lock.json
+      - name: Install exact desktop dependencies
+        run: npm ci --ignore-scripts --no-fund --no-audit
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
       - name: Run end-to-end workspace tests
@@ -152,47 +115,49 @@ jobs:
   rust:
     name: Tauri Rust safety and lifecycle
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 40
     defaults:
       run:
         working-directory: desktop
     steps:
       - uses: actions/checkout@v6
-      - name: Install Linux Tauri dependencies
+      - name: Install current Linux Tauri prerequisites
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libappindicator3-dev \
+            build-essential \
+            curl \
+            file \
+            libayatana-appindicator3-dev \
             librsvg2-dev \
-            patchelf
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev \
+            patchelf \
+            wget
       - uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: desktop/package.json
+          cache-dependency-path: desktop/package-lock.json
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-      - name: Install desktop dependencies
-        run: npm install --ignore-scripts --no-fund --no-audit
+      - name: Install exact desktop dependencies
+        run: npm ci --ignore-scripts --no-fund --no-audit
       - name: Build frontend and generate platform icons
-        run: |
-          npm run build
-          npx tauri icon src-tauri/icons/autocite-icon.svg
+        run: npm run build
       - name: Add a nonfunctional CI sidecar placeholder
         run: |
           mkdir -p src-tauri/binaries
           printf '#!/bin/sh\nexit 0\n' > src-tauri/binaries/autocite-backend-x86_64-unknown-linux-gnu
           chmod +x src-tauri/binaries/autocite-backend-x86_64-unknown-linux-gnu
-      - name: Generate Cargo lockfile
-        run: cargo generate-lockfile --manifest-path src-tauri/Cargo.toml
       - name: Check Rust formatting
         run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
       - name: Run Clippy with warnings denied
-        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets --all-features -- -D warnings
       - name: Run Rust tests
-        run: cargo test --manifest-path src-tauri/Cargo.toml --all-features
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked --all-features
       - name: Upload Cargo lockfile and generated icons
         if: always()
         uses: actions/upload-artifact@v7
@@ -217,8 +182,8 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.12"
-      - name: Synchronize Python environment
-        run: uv sync --extra dev
+      - name: Synchronize locked Python environment
+        run: uv sync --frozen --extra dev
       - name: Exercise the authenticated application API
         env:
           AUTOCITE_API_TOKEN: desktop-ci-token
