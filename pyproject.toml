@@ -8,12 +8,12 @@ version = "0.6.0"
 description = "Evidence-backed Bluepages and Whitepages legal citation reviewer with document workflows, jurisdiction profiles, and MCP workspace support."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { file = "LICENSE" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Zachary Brenner" }]
 keywords = ["MCP", "legal citation", "Bluebook", "Bluepages", "Whitepages", "citechecking"]
 classifiers = [
   "Development Status :: 3 - Alpha",
-  "License :: OSI Approved :: MIT",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
