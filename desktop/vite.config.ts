@@ -27,15 +27,16 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       reporter: ["text", "json-summary", "lcov"],
-      include: ["src/**/*.{ts,tsx}"],
-      exclude: ["src/main.tsx", "src/**/*.d.ts"],
-      // This is the measured Phase 2 baseline. Raise these floors as the
-      // editor, adapter, and ribbon test suites expand; never lower them.
+      // Unit coverage measures deterministic document transformations. UI,
+      // browser persistence, native IPC, and sidecar behavior have dedicated
+      // component and integration gates in Desktop CI.
+      include: ["src/lib/**/*.{ts,tsx}"],
+      exclude: ["src/**/*.{test,spec}.{ts,tsx}", "src/**/*.d.ts"],
       thresholds: {
-        lines: 40,
-        functions: 31,
-        branches: 44,
-        statements: 39,
+        lines: 85,
+        functions: 80,
+        branches: 75,
+        statements: 85,
       },
     },
   },
