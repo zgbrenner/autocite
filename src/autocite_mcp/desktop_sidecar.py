@@ -1,12 +1,34 @@
 from __future__ import annotations
 
+import json
 import os
+import sys
+from typing import Any
 
 from .hosting import build_http_app, resolve_bind_host
 
 
+def sidecar_self_test() -> dict[str, Any]:
+    """Verify the bundled imports and authenticated loopback configuration."""
+    token = "autocite-sidecar-self-test"
+    host = resolve_bind_host("127.0.0.1", allow_remote="0", api_token=token)
+    app = build_http_app(api_token=token)
+    if host != "127.0.0.1" or app.token != token:
+        raise RuntimeError("the desktop sidecar self-test could not initialize safely")
+    return {
+        "status": "ok",
+        "host": host,
+        "authenticated": True,
+        "local_first": True,
+    }
+
+
 def main() -> None:
     """Run the authenticated loopback service bundled with the Tauri shell."""
+    if "--self-test" in sys.argv[1:]:
+        print(json.dumps(sidecar_self_test(), sort_keys=True))
+        return
+
     import uvicorn
 
     host = resolve_bind_host(
