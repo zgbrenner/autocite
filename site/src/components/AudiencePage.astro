@@ -1,0 +1,95 @@
+---
+import DownloadCta from "./DownloadCta.astro";
+import FaqList from "./FaqList.astro";
+import SiteLayout from "../layouts/SiteLayout.astro";
+import { buildBreadcrumbJsonLd, buildFaqJsonLd } from "../lib/seo";
+
+export interface AudienceSection {
+  title: string;
+  paragraphs: string[];
+  bullets?: string[];
+}
+
+export interface AudiencePageData {
+  slug: string;
+  title: string;
+  h1: string;
+  description: string;
+  lead: string;
+  asideTitle: string;
+  asideBody: string;
+  sections: AudienceSection[];
+  faq: Array<{ question: string; answer: string }>;
+  ctaHeading?: string;
+  ctaBody?: string;
+}
+
+interface Props {
+  page: AudiencePageData;
+}
+
+const { page } = Astro.props;
+const pathname = `/${page.slug}/`;
+const jsonLd = [
+  buildBreadcrumbJsonLd([
+    { name: "AutoCite", path: "/" },
+    { name: page.h1, path: pathname },
+  ]),
+  buildFaqJsonLd(page.faq),
+];
+---
+
+<SiteLayout title={page.title} description={page.description} pathname={pathname} jsonLd={jsonLd}>
+  <header class="page-hero">
+    <div class="shell page-hero-grid">
+      <div>
+        <h1>{page.h1}</h1>
+        <p>{page.lead}</p>
+        <div class="button-row" style="margin-top: 30px;">
+          <a class="button button-blue" href="https://github.com/zgbrenner/autocite/releases/latest">Download free</a>
+          <a class="button button-secondary" href="/citation-risk-scan/">Try the private scan</a>
+        </div>
+      </div>
+      <aside class="page-aside">
+        <strong>{page.asideTitle}</strong>
+        <p>{page.asideBody}</p>
+      </aside>
+    </div>
+  </header>
+
+  <section class="section">
+    <div class="shell content-grid">
+      <article class="prose">
+        {page.sections.map((section) => (
+          <section>
+            <h2>{section.title}</h2>
+            {section.paragraphs.map((paragraph) => <p>{paragraph}</p>)}
+            {section.bullets && (
+              <ul>
+                {section.bullets.map((bullet) => <li>{bullet}</li>)}
+              </ul>
+            )}
+          </section>
+        ))}
+
+        <h2>Frequently asked questions</h2>
+        <FaqList items={page.faq} />
+      </article>
+
+      <nav class="side-nav" aria-label="Related AutoCite pages">
+        <strong>Continue exploring</strong>
+        <a href="/privacy/">Privacy architecture</a>
+        <a href="/methodology/">How AutoCite works</a>
+        <a href="/compare/generic-ai/">Compare generic AI</a>
+        <a href="/guides/">Legal citation guides</a>
+        <a href="/download/">Download options</a>
+      </nav>
+    </div>
+  </section>
+
+  <section class="section-tight">
+    <div class="shell">
+      <DownloadCta heading={page.ctaHeading} body={page.ctaBody} />
+    </div>
+  </section>
+</SiteLayout>
