@@ -1,0 +1,4 @@
+Contact: https://github.com/zgbrenner/autocite/security
+Canonical: https://zgbrenner-autocite.pages.dev/security.txt
+Policy: https://github.com/zgbrenner/autocite/security/policy
+Preferred-Languages: en
