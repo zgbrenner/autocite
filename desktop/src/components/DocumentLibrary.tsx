@@ -84,20 +84,21 @@ export function DocumentLibrary({
           </div>
         ) : (
           filtered.map((document) => (
-            <button
-              key={document.sessionId}
-              type="button"
-              role="listitem"
-              className={`document-row${document.sessionId === activeDocumentId ? " is-active" : ""}`}
-              onClick={() => onSelect(document.sessionId)}
-            >
-              <FileText size={21} weight={document.hasReview ? "fill" : "regular"} />
-              <span className="document-row-copy">
-                <strong>{document.title}</strong>
-                <small>{formatUpdatedAt(document.updatedAt)}</small>
-              </span>
-              {document.hasReview && <span className="review-dot" aria-label="Reviewed" />}
-            </button>
+            <div key={document.sessionId} role="listitem">
+              <button
+                type="button"
+                aria-label={`Open ${document.title}`}
+                className={`document-row${document.sessionId === activeDocumentId ? " is-active" : ""}`}
+                onClick={() => onSelect(document.sessionId)}
+              >
+                <FileText size={21} weight={document.hasReview ? "fill" : "regular"} />
+                <span className="document-row-copy">
+                  <strong>{document.title}</strong>
+                  <small>{formatUpdatedAt(document.updatedAt)}</small>
+                </span>
+                {document.hasReview && <span className="review-dot" aria-label="Reviewed" />}
+              </button>
+            </div>
           ))
         )}
       </div>
