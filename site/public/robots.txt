@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://zgbrenner.github.io/autocite/sitemap-index.xml
+Sitemap: https://zgbrenner-autocite.pages.dev/sitemap-index.xml
