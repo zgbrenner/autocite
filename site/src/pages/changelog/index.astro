@@ -1,0 +1,40 @@
+---
+import SiteLayout from "../../layouts/SiteLayout.astro";
+import { buildBreadcrumbJsonLd } from "../../lib/seo";
+---
+
+<SiteLayout
+  title="AutoCite changelog"
+  description="Follow AutoCite releases and major architecture changes, with a clear distinction between published software and work still under development."
+  pathname="/changelog/"
+  jsonLd={buildBreadcrumbJsonLd([
+    { name: "AutoCite", path: "/" },
+    { name: "Changelog", path: "/changelog/" },
+  ])}
+>
+  <header class="page-hero">
+    <div class="shell page-hero-grid">
+      <div><h1>What shipped, what changed, and what is still in development.</h1><p>The release page remains the source of truth for downloadable artifacts. Development work is not presented as released until it is merged and published.</p></div>
+      <aside class="page-aside"><strong>Transparent by default.</strong><p>Marketing pages should never outrun the repository's actual release state.</p></aside>
+    </div>
+  </header>
+
+  <section class="section">
+    <div class="narrow prose">
+      <h2>Current development</h2>
+      <p><strong>SEO and growth launch surface.</strong> A new Astro marketing site, private browser Citation Risk Scan, educational guide cluster, structured data, launch kit, and automated SEO checks are being developed on an isolated branch.</p>
+      <p><strong>Tauri word processor.</strong> The Tauri and React document-first interface remains development work until its pull request is merged and a release containing it is published. Current download claims continue to point to GitHub Releases rather than assuming that interface has shipped.</p>
+
+      <h2>July 31, 2026 — Canonical local application backend</h2>
+      <p>AutoCite added durable SQLite document sessions, revision-safe updates, persistent review jobs and decisions, authenticated local application APIs, import and export workflows, and conservative legal-context reduction. The shared backend is designed to serve desktop, MCP, and future integration surfaces without duplicating citation state.</p>
+
+      <h2>July 30, 2026 — AutoCite 0.6.0</h2>
+      <p>The 0.6.0 release delivered the production desktop workflow, decision-aware citation review, preservation-first DOCX output, real-document evaluation, hardened portable packaging, checksums, manifests, and release gates.</p>
+
+      <h2>Ongoing reliability work</h2>
+      <p>AutoCite continues to expand adversarial citation tests, document-level evaluation, short-form resolution, source-type coverage, performance protections, packaging verification, and truthful capability boundaries.</p>
+
+      <p><a href="https://github.com/zgbrenner/autocite/releases">View all GitHub releases</a> or <a href="https://github.com/zgbrenner/autocite/commits/main">inspect the commit history</a>.</p>
+    </div>
+  </section>
+</SiteLayout>
