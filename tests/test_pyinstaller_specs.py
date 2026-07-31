@@ -29,11 +29,12 @@ def test_portable_launcher_preserves_autocite_package_context():
     assert "from ." not in launcher
 
 
-def test_portable_spec_bundles_eyecite_database_resources():
+def test_portable_spec_bundles_runtime_data_resources():
     spec = read_spec("autocite-desktop.spec")
 
     assert 'collect_data_files("courts_db")' in spec
     assert 'collect_data_files("reporters_db")' in spec
+    assert 'collect_data_files("docx")' in spec
 
 
 def test_tauri_sidecar_spec_resolves_entrypoint_from_repository_root():
@@ -50,3 +51,4 @@ def test_tauri_sidecar_bundles_eyecite_database_resources():
 
     assert '"courts_db"' in spec
     assert '"reporters_db"' in spec
+    assert '"docx"' in spec
