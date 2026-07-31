@@ -8,7 +8,9 @@ export function normalizePath(pathname: string): string {
 }
 
 export function buildCanonical(pathname: string): string {
-  return new URL(normalizePath(pathname), SITE_URL).toString();
+  const normalized = normalizePath(pathname);
+  if (normalized === "/") return new URL(SITE_URL).toString();
+  return new URL(normalized.slice(1), SITE_URL).toString();
 }
 
 export function buildPageTitle(title: string): string {
