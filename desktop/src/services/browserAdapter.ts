@@ -39,7 +39,6 @@ function textExport(
   document: DocumentRecord,
   format: ExportFormat,
 ): ExportDocumentResult {
-  const extension = format === "markdown" ? "md" : format;
   const payload = new TextEncoder().encode(document.text);
   const mimeTypes: Record<ExportFormat, string> = {
     docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -48,7 +47,7 @@ function textExport(
     md: "text/markdown; charset=utf-8",
   };
   return {
-    filename: `${document.title}.${extension}`,
+    filename: `${document.title}.${format}`,
     mimeType: mimeTypes[format],
     dataBase64: bytesToBase64(payload),
     sizeBytes: payload.length,
@@ -95,6 +94,32 @@ export function createBrowserAdapter(): ApplicationAdapter {
     return document;
   };
 
+  const createDocument = async (
+    request: CreateDocumentRequest,
+  ): Promise<DocumentRecord> => {
+    const timestamp = now();
+    const sessionId = crypto.randomUUID();
+    const document: DocumentRecord = {
+      sessionId,
+      title: request.title,
+      text: request.text,
+      sourceFormat: request.sourceFormat,
+      fileName: `${request.title}.md`,
+      mimeType: "text/markdown",
+      mode: request.mode,
+      jurisdiction: request.jurisdiction,
+      documentType: request.documentType,
+      revision: 1,
+      contentSha256: fingerprint(request.text),
+      reviewRevision: null,
+      hasReview: false,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    documents.set(sessionId, document);
+    return structuredClone(document);
+  };
+
   return {
     async health(): Promise<BackendHealth> {
       return { status: "preview", localFirst: true };
@@ -113,29 +138,7 @@ export function createBrowserAdapter(): ApplicationAdapter {
       return structuredClone(requireDocument(sessionId));
     },
 
-    async createDocument(request: CreateDocumentRequest): Promise<DocumentRecord> {
-      const timestamp = now();
-      const sessionId = crypto.randomUUID();
-      const document: DocumentRecord = {
-        sessionId,
-        title: request.title,
-        text: request.text,
-        sourceFormat: request.sourceFormat,
-        fileName: `${request.title}.md`,
-        mimeType: "text/markdown",
-        mode: request.mode,
-        jurisdiction: request.jurisdiction,
-        documentType: request.documentType,
-        revision: 1,
-        contentSha256: fingerprint(request.text),
-        reviewRevision: null,
-        hasReview: false,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      };
-      documents.set(sessionId, document);
-      return structuredClone(document);
-    },
+    createDocument,
 
     async updateDocument(request: UpdateDocumentRequest): Promise<DocumentRecord> {
       const current = requireDocument(request.sessionId);
@@ -169,7 +172,7 @@ export function createBrowserAdapter(): ApplicationAdapter {
       const binary = atob(request.dataBase64);
       const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
       const text = new TextDecoder().decode(bytes);
-      return this.createDocument({
+      return createDocument({
         title: request.fileName.replace(/\.[^.]+$/u, ""),
         text,
         sourceFormat: request.fileName.split(".").pop() ?? "text",
