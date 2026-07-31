@@ -295,6 +295,12 @@ class AutoCiteApplicationService:
             payload = effective_text.encode("utf-8")
             filename = f"{stem}.md"
             mime_type = "text/markdown; charset=utf-8"
+        elif normalized == "pdf":
+            from .pdf_export import build_text_pdf
+
+            payload = build_text_pdf(effective_text, title=document.title)
+            filename = f"{stem}-reviewed.pdf"
+            mime_type = "application/pdf"
         elif normalized == "docx":
             exporter = self._docx_exporter
             if exporter is None:
@@ -307,7 +313,7 @@ class AutoCiteApplicationService:
             )
         else:
             raise ValueError(
-                "export_format must be one of txt, md, markdown, or docx"
+                "export_format must be one of txt, md, markdown, pdf, or docx"
             )
         return {
             "filename": filename,
