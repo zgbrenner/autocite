@@ -1,0 +1,73 @@
+---
+import SiteLayout from "../../layouts/SiteLayout.astro";
+import { SITE } from "../../config";
+import { buildBreadcrumbJsonLd } from "../../lib/seo";
+---
+
+<SiteLayout
+  title="AutoCite press kit"
+  description="Press facts, product descriptions, founder boilerplate, links, and usage guidance for the open-source AutoCite private legal citation checker."
+  pathname="/press/"
+  jsonLd={buildBreadcrumbJsonLd([
+    { name: "AutoCite", path: "/" },
+    { name: "Press kit", path: "/press/" },
+  ])}
+>
+  <header class="page-hero">
+    <div class="shell page-hero-grid">
+      <div>
+        <h1>AutoCite press kit.</h1>
+        <p>Accurate product language, project facts, and links for journalists, reviewers, directory editors, educators, and legal-technology communities.</p>
+      </div>
+      <aside class="page-aside"><strong>Please preserve the limitations.</strong><p>Do not describe AutoCite as guaranteeing Bluebook compliance, checking good-law status, or replacing legal judgment.</p></aside>
+    </div>
+  </header>
+
+  <section class="section">
+    <div class="shell content-grid">
+      <article class="prose">
+        <h2>One-sentence description</h2>
+        <p>AutoCite is an open-source, local-first legal citation checker that applies supported mechanical fixes without rewriting the surrounding legal prose.</p>
+
+        <h2>Short description</h2>
+        <p>AutoCite reviews Bluepages and Whitepages citation mechanics in legal documents while keeping deterministic validation in control of automatic edits. The desktop workflow is local-first, has no application telemetry, preserves the source document, and exposes exact issue spans, provenance, correction levels, decisions, and limitations.</p>
+
+        <h2>Project facts</h2>
+        <ul>
+          <li>Open source under the MIT License.</li>
+          <li>Supports DOCX, searchable PDF, Markdown, and TXT workflows.</li>
+          <li>Available as a desktop application, MCP server, and command-line tool.</li>
+          <li>Designed for Bluepages and Whitepages review.</li>
+          <li>Standard desktop review is local-first and has no application telemetry.</li>
+          <li>Optional deep source review can retrieve CourtListener opinion text when explicitly enabled.</li>
+          <li>Does not determine good-law status, proposition support, controlling authority, or complete Bluebook compliance.</li>
+        </ul>
+
+        <h2>Founder boilerplate</h2>
+        <p>AutoCite was created by Zachary Brenner as an open-source legal-technology project focused on safer, auditable citation automation. The project combines legal-writing workflows with local-first software, deterministic validation, transparent evaluation, and explicit limits on automated legal conclusions.</p>
+
+        <h2>Name and styling</h2>
+        <p>Write the product name as <strong>AutoCite</strong>, with a capital A and C. The preferred descriptor is <strong>private legal citation checker</strong> or <strong>local-first legal citation reviewer</strong>.</p>
+
+        <h2>Links</h2>
+        <ul>
+          <li><a href={SITE.repositoryUrl}>Source repository</a></li>
+          <li><a href={SITE.releaseUrl}>Latest release</a></li>
+          <li><a href="/methodology/">Methodology</a></li>
+          <li><a href="/privacy/">Privacy architecture</a></li>
+          <li><a href="/citation-risk-scan/">Browser-only Citation Risk Scan</a></li>
+        </ul>
+
+        <h2>Required disclaimer</h2>
+        <p class="notice warning">AutoCite is not affiliated with or endorsed by the publishers or editors of The Bluebook, CourtListener, Free Law Project, any court, school, journal, or law firm. It does not replace official manuals, controlling rules, licensed citators, source verification, or professional judgment.</p>
+      </article>
+      <nav class="side-nav" aria-label="Press kit sections">
+        <strong>Media kit</strong>
+        <a href="#">Product description</a>
+        <a href={SITE.releaseUrl}>Downloads</a>
+        <a href={SITE.repositoryUrl}>Source</a>
+        <a href="/changelog/">Changelog</a>
+      </nav>
+    </div>
+  </section>
+</SiteLayout>
