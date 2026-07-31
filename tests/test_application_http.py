@@ -10,7 +10,6 @@ from autocite_mcp.application_http import configure_application_service
 from autocite_mcp.application_service import AutoCiteApplicationService
 from autocite_mcp.application_sessions import DocumentSessionStore
 from autocite_mcp.hosting import build_http_app
-from autocite_mcp.server import mcp
 
 
 async def _fake_reviewer(text: str, **_: Any) -> dict[str, Any]:
@@ -49,7 +48,7 @@ def _service(tmp_path: Path) -> AutoCiteApplicationService:
 
 def test_application_routes_cover_document_review_and_export(tmp_path: Path) -> None:
     configure_application_service(_service(tmp_path))
-    with TestClient(mcp.streamable_http_app()) as client:
+    with TestClient(build_http_app()) as client:
         health = client.get("/app/health")
         assert health.status_code == 200
         assert health.json()["schema_version"] == "1.0"
