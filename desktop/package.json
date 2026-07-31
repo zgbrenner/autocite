@@ -8,13 +8,17 @@
   },
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "build": "tsc -b && vite build",
+    "prepare:icons": "tauri icon src-tauri/icons/autocite-icon.svg",
+    "build:web": "tsc -b && vite build",
+    "build": "npm run prepare:icons && npm run build:web",
     "preview": "vite preview --host 127.0.0.1",
     "typecheck": "tsc -b --pretty false",
     "lint": "eslint . --max-warnings=0",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
+    "check": "npm run lint && npm run typecheck && npm test && npm run build",
+    "audit:production": "npm audit --omit=dev --audit-level=high",
     "tauri": "tauri"
   },
   "dependencies": {
