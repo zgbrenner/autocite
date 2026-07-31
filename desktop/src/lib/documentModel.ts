@@ -34,9 +34,12 @@ export function calculateDocumentStats(text: string): DocumentStats {
 }
 
 export function normalizeDocumentTitle(title: string): string {
-  const normalized = title
-    .normalize("NFKC")
-    .replace(/[<>:"/\\|?*\u0000-\u001f]/gu, " ")
+  const forbidden = new Set('<>:"/\\|?*');
+  const sanitized = Array.from(title.normalize("NFKC"), (character) => {
+    const codePoint = character.codePointAt(0) ?? 0;
+    return codePoint < 32 || forbidden.has(character) ? " " : character;
+  }).join("");
+  const normalized = sanitized
     .replace(/\s+/gu, " ")
     .trim()
     .replace(/[. ]+$/gu, "")
