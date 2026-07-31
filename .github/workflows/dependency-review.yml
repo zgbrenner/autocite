@@ -2,23 +2,40 @@ name: Dependency review
 
 on:
   pull_request:
+  schedule:
+    - cron: "41 13 * * 4"
+  workflow_dispatch:
 
 permissions:
   contents: read
   pull-requests: write
 
 concurrency:
-  group: dependency-review-${{ github.event.pull_request.number }}
+  group: dependency-review-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   review:
-    name: Review dependency changes
+    name: Review dependency changes and locked trees
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
+      - name: Detect GitHub Dependency Graph availability
+        id: graph
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh api "repos/$GITHUB_REPOSITORY/dependency-graph/sbom" >/dev/null 2>&1; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::GitHub Dependency Graph is disabled; using direct lockfile audits."
+          fi
       - name: Reject vulnerable or incompatible dependency changes
+        if: steps.graph.outputs.available == 'true' && github.event_name == 'pull_request'
         uses: actions/dependency-review-action@v5
         with:
           fail-on-severity: high
@@ -36,3 +53,29 @@ jobs:
           comment-summary-in-pr: always
           show-openssf-scorecard: true
           show-patched-versions: true
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Audit locked Python release dependencies
+        shell: bash
+        run: |
+          uv audit \
+            --no-extra slm \
+            --no-extra slm-quantized \
+            --no-extra retrieval \
+            --no-extra retrieval-reranker \
+            --no-extra experimental-gliner \
+            --no-extra desktop \
+            --no-extra desktop-build
+      - name: Audit production desktop JavaScript dependencies
+        run: npm audit --prefix desktop --omit=dev --audit-level=high
+      - name: Install RustSec cargo-audit
+        run: cargo install cargo-audit --locked
+      - name: Audit locked Tauri Rust dependencies
+        run: cargo audit --file desktop/src-tauri/Cargo.lock
