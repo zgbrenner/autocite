@@ -13,8 +13,13 @@ def read_spec(name: str) -> str:
 def assert_docx_template_mapping(spec: str) -> None:
     assert "get_package_paths" in spec
     assert 'get_package_paths("docx")' in spec
-    assert 'docx_package_dir / "templates"' in spec
-    assert '"docx/templates"' in spec
+    assert 'docx_templates_dir = docx_package_dir / "templates"' in spec
+    assert 'sorted(docx_templates_dir.rglob("*"))' in spec
+    assert "template_file.is_file()" in spec
+    assert "template_file.relative_to(docx_templates_dir).parent" in spec
+    assert 'destination = Path("docx/templates") / relative_parent' in spec
+    assert "datas.append((str(template_file), destination.as_posix()))" in spec
+    assert 'datas.append((str(docx_package_dir / "templates"), "docx/templates"))' not in spec
 
 
 def test_portable_desktop_spec_resolves_entrypoint_from_repository_root():
