@@ -11,7 +11,7 @@ describe("SEO helpers", () => {
   it("normalizes canonical paths without preserving tracking parameters", () => {
     expect(normalizePath("guides/privacy?utm_source=test#section")).toBe("/guides/privacy/");
     expect(buildCanonical("/privacy")).toBe(
-      "https://zgbrenner.github.io/autocite/privacy/",
+      "https://zgbrenner-autocite.pages.dev/privacy/",
     );
   });
 
