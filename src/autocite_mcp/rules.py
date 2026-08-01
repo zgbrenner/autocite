@@ -70,14 +70,6 @@ RULE_CATALOG: dict[str, dict[str, Any]] = {
         "description": "Confirm that the citation includes a pinpoint page when the proposition depends on a specific passage.",
         "autofix": False,
     },
-    "UNRECOGNIZED_CITATION": {
-        "title": "Unrecognized citation",
-        "bluepages_rule": "B1",
-        "whitepages_rule": "Rule 1",
-        "severity": "warning",
-        "description": "The text resembles a citation but could not be parsed safely.",
-        "autofix": False,
-    },
 }
 
 
@@ -98,5 +90,5 @@ def validate_output_style(output_style: str) -> str:
 
 
 def rule_reference(code: str, mode: str) -> str:
-    rule = RULE_CATALOG.get(code, RULE_CATALOG["UNRECOGNIZED_CITATION"])
+    rule = RULE_CATALOG[code]
     return str(rule["bluepages_rule" if mode == "bluepages" else "whitepages_rule"])
