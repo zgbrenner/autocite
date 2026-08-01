@@ -849,10 +849,16 @@ def classify_document_mode(
     elif normalized_type != "auto":
         raise ValueError("document_type must be auto or a recognized court/practitioner/academic type")
     searchable = " ".join(filter(None, [ir.metadata.title, ir.metadata.subject, ir.text[:4000]]))
-    if re.search(r"\b(?:district|supreme|superior|bankruptcy) court\b|\bplaintiff\b|\bdefendant\b|\bmotion\b", searchable, re.I):
+    if re.search(r"\b(?:district|superior|bankruptcy) court\b|\bplaintiff\b|\bdefendant\b|\bmotion\b", searchable, re.I):
         blue_evidence.append("court_filing_language")
     if re.search(r"\blaw review\b|\bseminar paper\b|\bthis (?:article|note)\b|\bscholarly\b", searchable, re.I):
         white_evidence.append("academic_language")
+    if re.search(
+        r"^[ \t]*by[ \t]+[A-Z][a-zA-Z'.-]*(?:[ \t]+[A-Z][a-zA-Z'.-]*){1,3}[ \t]*$",
+        ir.text[:300],
+        re.I | re.M,
+    ):
+        white_evidence.append("author_byline")
     note_count = len(ir.blocks_of_kind("footnote")) + len(ir.blocks_of_kind("endnote"))
     if note_count:
         white_evidence.append(f"numbered_notes:{note_count}")

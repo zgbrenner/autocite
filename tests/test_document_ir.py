@@ -208,6 +208,48 @@ def test_document_mode_classifier_reports_evidence_conflicts_and_confirmation():
     assert result["user_confirmation_recommended"] is True
 
 
+def test_academic_article_mentioning_supreme_court_classifies_as_whitepages():
+    # Regression: an academic article discussing "the Supreme Court" plus a
+    # couple of inline case citations used to false-positive into bluepages
+    # because "supreme court" matched the court-filing regex and there were
+    # no footnotes to offset it. An author byline is now also treated as
+    # positive whitepages evidence.
+    text = (
+        "The Eroding Fourth Amendment\n"
+        "By Greta Shope\n\n"
+        "Introduction\n\n"
+        "This article examines how the Supreme Court has narrowed Fourth "
+        "Amendment protections over the past two decades. In Smith v. Jones, "
+        "123 F.3d 456 (9th Cir. 2020), the court signaled a retreat from "
+        "Katz v. United States, 389 U.S. 347 (1967). This trend is troubling "
+        "for civil liberties scholars.\n\n"
+        "This article proceeds in three parts. Part I surveys the doctrine. "
+        "Part II analyzes recent Supreme Court decisions. Part III proposes "
+        "reform.\n"
+    )
+    ir = parse_text_ir(text, filename="fourth_amendment_article.txt")
+    result = classify_document_mode(ir)
+    assert result["selected_mode"] == "whitepages"
+    assert "author_byline" in result["evidence"]
+    assert "court_filing_language" not in result["evidence"]
+
+
+@pytest.mark.parametrize(
+    "signature_block",
+    [
+        "Respectfully submitted,\n\nBy: John Smith\nAttorney for Plaintiff",
+        "By: /s/ Jane Doe",
+        "By Jane M. Doe, Esq.",
+    ],
+)
+def test_legal_signature_blocks_do_not_trigger_the_byline_heuristic(signature_block):
+    text = f"IN THE UNITED STATES DISTRICT COURT\n\nPlaintiff moves for relief.\n\n{signature_block}"
+    ir = parse_text_ir(text, filename="motion.txt")
+    result = classify_document_mode(ir)
+    assert "author_byline" not in result["evidence"]
+    assert result["selected_mode"] == "bluepages"
+
+
 def test_load_document_bytes_keeps_flat_text_compatibility_and_exposes_ir():
     loaded = load_document_bytes("See 42 USC §1983.".encode(), "memo.txt")
     assert loaded.text == "See 42 USC §1983."
