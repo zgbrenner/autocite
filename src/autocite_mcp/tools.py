@@ -241,7 +241,7 @@ async def review_document(
         "structured_citation_inventory": [
             asdict(citation) for citation in structured_citations
         ],
-        "document_ir": source_ir.summary(),
+        "document_ir": source_ir.with_citations(structured_citations).summary(),
         "citation_graph": citation_graph.as_dict(),
         "rule_findings": [finding.as_dict() for finding in contextual_rule_findings],
         "correction_levels": {
@@ -421,7 +421,11 @@ async def review_uploaded_document(
         "source_format": loaded.source_format,
         "warnings": list(loaded.warnings),
         "sha256": hashlib.sha256(payload).hexdigest(),
-        "document_ir": loaded.ir.summary() if loaded.ir else None,
+        "document_ir": (
+            {**loaded.ir.summary(), "citation_count": result["document_ir"]["citation_count"]}
+            if loaded.ir
+            else None
+        ),
     }
     return result
 
@@ -462,7 +466,12 @@ def export_review_docx(
     if not original_text and not corrected_text:
         raise ValueError("original_text and corrected_text cannot both be empty")
     payload = build_review_docx(original_text, corrected_text, tracked=tracked)
-    safe_filename = filename if filename.lower().endswith(".docx") else f"{filename}.docx"
+    base_filename = filename.strip() or "autocite-review.docx"
+    safe_filename = (
+        base_filename
+        if base_filename.lower().endswith(".docx")
+        else f"{base_filename}.docx"
+    )
     return {
         "filename": safe_filename,
         "mime_type": (

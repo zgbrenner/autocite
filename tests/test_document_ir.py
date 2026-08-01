@@ -141,6 +141,25 @@ def test_docx_ooxml_footnotes_are_separate_and_citations_keep_note_location():
     assert all(item.location.block_local_start >= 0 for item in note_citations)
 
 
+def test_citation_opening_a_new_paragraph_keeps_its_block_location():
+    # eyecite's case-name backward scan can absorb the leading "\n\n"
+    # paragraph separator into the citation's own start, landing it in the
+    # inter-block gap rather than inside the paragraph block that actually
+    # contains it. Previously this made block_at() fail to find any
+    # containing block, so the whole location (block_id, note_id,
+    # reconstruction_confidence, etc.) was silently discarded even though
+    # the citation is unambiguously inside the second paragraph.
+    text = "Argument.\n\nSmith v. Jones, 123 F.3d 456 (9th Cir. 2020)."
+    ir = parse_text_ir(text)
+    citations = locate_citations(ir, CitationEngine())
+    case_citation = next(item for item in citations if item.source_type == "case")
+    assert case_citation.location.block_id is not None
+    assert case_citation.location.reconstruction_confidence == "certain"
+    assert case_citation.location.provenance == "parsed_document_structure"
+    assert case_citation.location.block_local_start is not None
+    assert case_citation.location.block_local_start >= 0
+
+
 def test_pdf_preserves_pages_coordinates_and_uncertain_footnote_reconstruction(monkeypatch):
     class Box:
         height = 800
@@ -233,6 +252,11 @@ async def test_uploaded_review_returns_structured_locations_without_breaking_fla
         for item in result["structured_citation_inventory"]
     )
     assert result["input_document"]["document_ir"]["footnote_count"] == 1
+    # citation_count was a dead field, always 0: DocumentIR.citations defaults
+    # to () and nothing ever called with_citations() before summary().
+    assert result["document_ir"]["citation_count"] == len(result["structured_citation_inventory"])
+    assert result["document_ir"]["citation_count"] > 0
+    assert result["input_document"]["document_ir"]["citation_count"] == result["document_ir"]["citation_count"]
 
 
 def test_scanned_pdf_still_returns_ocr_required(monkeypatch):

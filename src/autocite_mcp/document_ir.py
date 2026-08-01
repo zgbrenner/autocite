@@ -787,14 +787,26 @@ def parse_pdf_ir(payload: bytes, *, filename: str = "document.pdf") -> DocumentI
 def locate_citations(ir: DocumentIR, engine: Any) -> tuple[CitationOccurrence, ...]:
     occurrences: list[CitationOccurrence] = []
     for index, citation in enumerate(engine.extract(ir.text)):
-        block = ir.block_at(citation.start)
+        # eyecite's case-name backward scan can absorb a block separator's
+        # leading whitespace/newlines into citation.start (e.g. a citation
+        # opening a new paragraph or footnote right after a blank-line
+        # boundary), landing citation.start in the inter-block gap rather
+        # than the block the citation is actually in. block_at looks up the
+        # block containing an exact offset, so it returns None (or the wrong,
+        # preceding block) for a position in that gap; searching forward past
+        # any leading whitespace finds the block the citation's real content
+        # is in without changing the citation's own reported start/end/text.
+        block_lookup_start = citation.start
+        while block_lookup_start < citation.end and ir.text[block_lookup_start].isspace():
+            block_lookup_start += 1
+        block = ir.block_at(block_lookup_start)
         contained = bool(block and citation.end <= block.absolute_end)
         location = CitationLocation(
             block_id=block.block_id if contained and block else None,
             block_kind=block.kind if contained and block else None,
             absolute_start=citation.start,
             absolute_end=citation.end,
-            block_local_start=citation.start - block.absolute_start if contained and block else None,
+            block_local_start=max(0, citation.start - block.absolute_start) if contained and block else None,
             block_local_end=citation.end - block.absolute_start if contained and block else None,
             note_id=block.note_id if contained and block else None,
             note_number=block.note_number if contained and block else None,

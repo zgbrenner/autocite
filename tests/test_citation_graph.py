@@ -266,6 +266,26 @@ def test_hereinafter_definition_and_later_use_are_linked():
     assert any(edge.edge_type == "hereinafter_to_antecedent" for edge in graph.edges)
 
 
+def test_hereinafter_resolves_for_an_eyecite_recognized_case_citation():
+    # "12 Example L. Rev. 100" above isn't a reporter eyecite's own matcher
+    # recognizes, so extraction falls back to AutoCite's own regex, which
+    # never exercises eyecite's full_span() -- that's the standard path for
+    # any real case citation, so it needs its own coverage. Without trimming
+    # the trailing hereinafter clause out of the citation's own span (see
+    # extractors._trim_trailing_hereinafter), full_span() absorbs the
+    # "(hereinafter ...)" parenthetical into the citation itself, so the
+    # citation's end lands past where the hereinafter clause starts and the
+    # alias is never registered.
+    graph = _graph(
+        'Smith v. Jones, 123 F.3d 456, 460 (9th Cir. 2020) '
+        '(hereinafter "Smith Rule"). Later, the Smith Rule controls the outcome.'
+    )
+    result = _resolution(graph, "hereinafter")
+    assert result.resolution_method == "prior_hereinafter_definition"
+    assert result.resolved_authority_id is not None
+    assert not result.disqualifying_facts
+
+
 def test_id_resolution_follows_indigo_r15_3_prose_and_paragraph_semantics():
     # Indigo R15.3: Id. is barred by a preceding multi-source citation, not by
     # ordinary intervening prose. Prose that names another authority, or a

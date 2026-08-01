@@ -146,14 +146,21 @@ def _authority_id(source_type: str, key: Sequence[str]) -> str:
 
 
 def _location(ir: DocumentIR, start: int, end: int) -> CitationLocation:
-    block = ir.block_at(start)
+    # See document_ir.locate_citations: a match's own start can land in the
+    # whitespace gap between blocks (e.g. right after a blank-line paragraph
+    # break), so search forward past any leading whitespace before looking up
+    # the containing block, without changing the reported start/end.
+    block_lookup_start = start
+    while block_lookup_start < end and ir.text[block_lookup_start].isspace():
+        block_lookup_start += 1
+    block = ir.block_at(block_lookup_start)
     contained = bool(block and end <= block.absolute_end)
     return CitationLocation(
         block_id=block.block_id if contained and block else None,
         block_kind=block.kind if contained and block else None,
         absolute_start=start,
         absolute_end=end,
-        block_local_start=start - block.absolute_start if contained and block else None,
+        block_local_start=max(0, start - block.absolute_start) if contained and block else None,
         block_local_end=end - block.absolute_start if contained and block else None,
         note_id=block.note_id if contained and block else None,
         note_number=block.note_number if contained and block else None,

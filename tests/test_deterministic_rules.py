@@ -54,8 +54,25 @@ def test_case_and_statute_cannot_use_supra():
 
 def test_signal_punctuation_is_mechanical_but_substantive_fit_is_not_decided():
     findings = _findings("Cf Smith v. Jones, 123 F.3d 456 (9th Cir. 2020).")
-    assert any(item.issue_code == "SIGNAL_PUNCTUATION" for item in findings)
+    finding = next(item for item in findings if item.issue_code == "SIGNAL_PUNCTUATION")
     assert not any("support" in item.explanation.lower() for item in findings)
+    # Nothing in the codebase ever applies rule_findings to corrected_text
+    # (evaluate_document_rules output is informational only), so this must
+    # never claim safe_auto_fix -- see test_rule_findings_never_claim_an_unapplied_safe_auto_fix.
+    assert finding.correction_level == "suggested_fix"
+
+
+def test_rule_findings_never_claim_an_unapplied_safe_auto_fix():
+    # contextual rule findings (evaluate_document_rules) are informational
+    # only -- no code path applies them to corrected_text, so a rule spec
+    # marked safe_auto_fix would falsely claim an edit was made. See
+    # tools.py's response_contract ("Only high-confidence mechanical edits
+    # are applied automatically") and README's identical guarantee.
+    for spec in RULE_SPECS.values():
+        assert spec.correction_level != "safe_auto_fix", (
+            f"{spec.issue_code} is labeled safe_auto_fix but evaluate_document_rules "
+            "findings are never applied to corrected_text"
+        )
 
 
 def test_direct_quotation_without_pincite_requires_review():

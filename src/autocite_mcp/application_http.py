@@ -368,7 +368,13 @@ async def review_job(request: Request) -> Response:
 
 def build_application_http_app(mcp_app: Any) -> Starlette:
     """Mount the local application API alongside the existing MCP app."""
+    # Starlette's lifespan protocol is only handled by the outermost app;
+    # Mount does not forward it to sub-applications. mcp_app's own lifespan
+    # starts the StreamableHTTPSessionManager's task group, so without
+    # forwarding it here every /mcp request fails with "Task group is not
+    # initialized" as soon as it reaches the mounted app.
     return Starlette(
+        lifespan=mcp_app.router.lifespan_context,
         routes=[
             Route("/app/health", application_health, methods=["GET"]),
             Route("/app/import", import_document, methods=["POST"]),

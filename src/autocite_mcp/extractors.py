@@ -55,8 +55,28 @@ def _resource_map(citations: list[Any]) -> dict[int, str]:
     return mapping
 
 
+# eyecite's full_span() greedily absorbs *any* parenthetical immediately
+# following a full citation, including a trailing "(hereinafter ...)"
+# alias definition -- but that definition is always a separate clause, never
+# part of the citation itself (unlike, e.g., a legitimate "(en banc)"
+# parenthetical, which full_span() also absorbs and which genuinely is part
+# of the citation -- there's no way to distinguish the two cases in general,
+# so this only trims the unambiguous hereinafter case). Left untrimmed, the
+# citation's own end swallows the hereinafter clause, so citation_graph.py's
+# alias-registration overlap check (which requires the citation to end
+# before the hereinafter clause starts) can never succeed, and the standard
+# "Full Citation (hereinafter "Alias")" pattern silently fails to resolve.
+_TRAILING_HEREINAFTER = re.compile(r"\s*\(hereinafter\s+[“\"][^”\"]+[”\"]\)\s*$", re.I)
+
+
+def _trim_trailing_hereinafter(text: str, start: int, end: int) -> int:
+    match = _TRAILING_HEREINAFTER.search(text, start, end)
+    return match.start() if match else end
+
+
 def _case_match(text: str, citation: FullCaseCitation, resource_id: str | None) -> CitationMatch:
     start, end = citation.full_span()
+    end = _trim_trailing_hereinafter(text, start, end)
     core_start, _ = citation.span()
     case_name = text[start:core_start].strip().rstrip(",").strip()
     groups = citation.groups
@@ -106,6 +126,7 @@ def _law_match(text: str, citation: FullLawCitation, resource_id: str | None) ->
     if continuation:
         end = continuation.end()
         section = (section or "") + continuation.group(0)
+    end = _trim_trailing_hereinafter(text, start, end)
     reporter = _text(groups.get("reporter")) or ""
     compact_reporter = re.sub(r"[.\s]", "", reporter).upper()
     source_type = "regulation" if compact_reporter == "CFR" else "statute"
@@ -126,6 +147,7 @@ def _journal_match(
     text: str, citation: FullJournalCitation, resource_id: str | None
 ) -> CitationMatch:
     start, end = citation.full_span()
+    end = _trim_trailing_hereinafter(text, start, end)
     groups = citation.groups
     components = _with_present(
         volume=groups.get("volume"),

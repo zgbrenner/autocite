@@ -171,7 +171,15 @@ RULE_SPECS: dict[str, RuleSpec] = {
         context=("citation-adjacent text",),
         facts=("signal text",),
         conditions=("recognized signal has mechanically incorrect punctuation",),
-        correction_level="safe_auto_fix",
+        # Contextual rule findings (evaluate_document_rules) are informational
+        # only -- nothing in the codebase feeds them into the deterministic
+        # engine's fix() pipeline, so no rule_findings entry is ever actually
+        # applied to corrected_text. Labeling this "safe_auto_fix" previously
+        # claimed an edit had been made (per README: "Only findings at the
+        # safe_auto_fix correction level are applied without explicit
+        # approval") when it never was. "suggested_fix" matches the real
+        # behavior: a suggestion is surfaced, not auto-applied.
+        correction_level="suggested_fix",
     ),
     "SIGNAL_PARENTHETICAL_REVIEW": _spec(
         "SIGNAL_PARENTHETICAL_REVIEW",
