@@ -4,6 +4,7 @@ from autocite_mcp.citation_graph import build_citation_graph
 from autocite_mcp.deterministic_rules import (
     CORRECTION_LEVELS,
     RULE_SPECS,
+    _MAX_BIDI_FINDINGS,
     evaluate_document_rules,
     parse_parentheticals,
     parse_signals,
@@ -96,6 +97,24 @@ def test_bidi_override_characters_are_flagged_never_silently_applied():
     assert not any(
         f.issue_code == "BIDI_CONTROL_CHARACTER_PRESENT" for f in _findings(isolates_only)
     )
+
+
+def test_bidi_findings_are_capped_with_a_summary_instead_of_one_per_character():
+    # Regression: a hostile or corrupted document can carry many thousands
+    # of Bidi control characters. Emitting one RuleFinding per occurrence
+    # made this an unbounded output amplifier -- 500,000 characters in a
+    # 1.5MB input produced 500,000 findings and ~300MB of serialized JSON,
+    # remotely triggerable well under the 15MB document size limit. Findings
+    # must now be capped, with any excess rolled into a single summary
+    # finding rather than silently dropped.
+    total_occurrences = _MAX_BIDI_FINDINGS + 30
+    text = "‮" * total_occurrences
+    findings = _findings(text)
+    bidi_findings = [f for f in findings if f.issue_code == "BIDI_CONTROL_CHARACTER_PRESENT"]
+    assert len(bidi_findings) == _MAX_BIDI_FINDINGS + 1
+    summary = bidi_findings[-1]
+    assert str(total_occurrences) in summary.explanation
+    assert "30" in summary.explanation
 
 
 def test_direct_quotation_without_pincite_requires_review():

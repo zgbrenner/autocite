@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import functools
 import hashlib
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 from typing import Any
 
@@ -58,13 +60,25 @@ _ENGINE = CitationEngine()
 # also depend on via their own asyncio.to_thread calls. Bounding concurrency
 # for just the CPU-bound citation-engine work isolates that blast radius
 # rather than starving those other paths too.
-_CPU_BOUND_CONCURRENCY = asyncio.Semaphore(max(1, os.cpu_count() or 4))
+#
+# A plain ThreadPoolExecutor (not an asyncio.Semaphore) is used to enforce
+# that cap: a module-level asyncio.Semaphore only binds internal state to
+# whichever event loop first forces it to actually wait (genuine
+# contention, not merely being awaited), and the desktop app can easily
+# exceed the cap with concurrent work *within* a single asyncio.run() call
+# (one review), binding the semaphore to that call's event loop -- which
+# asyncio.run() closes when the review finishes. The next review's
+# asyncio.run() is a fresh loop, so its own contention then raised "bound
+# to a different event loop". A ThreadPoolExecutor has no loop affinity:
+# its max_workers cap is the concurrency limit, and run_in_executor can
+# submit to it from any event loop.
+_CPU_BOUND_EXECUTOR = ThreadPoolExecutor(max_workers=max(1, os.cpu_count() or 4))
 
 
 async def run_cpu_bound(fn, /, *args, **kwargs):
     """Run a CPU-bound citation-engine call off the event loop, with a concurrency cap."""
-    async with _CPU_BOUND_CONCURRENCY:
-        return await asyncio.to_thread(fn, *args, **kwargs)
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(_CPU_BOUND_EXECUTOR, functools.partial(fn, *args, **kwargs))
 
 
 def _run_deterministic_pipeline(

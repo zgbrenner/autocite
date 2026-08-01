@@ -849,14 +849,31 @@ def classify_document_mode(
     elif normalized_type != "auto":
         raise ValueError("document_type must be auto or a recognized court/practitioner/academic type")
     searchable = " ".join(filter(None, [ir.metadata.title, ir.metadata.subject, ir.text[:4000]]))
-    if re.search(r"\b(?:district|superior|bankruptcy) court\b|\bplaintiff\b|\bdefendant\b|\bmotion\b", searchable, re.I):
+    # Bare "supreme court" also fires on academic prose that discusses "the
+    # Supreme Court" in the abstract, with no other filing signal to offset
+    # it. Real Supreme Court filings identify themselves as appellate
+    # captions instead (petitioner/respondent, writ of certiorari, "brief
+    # for/of ..."), which academic articles about the Court essentially
+    # never do, so match on those instead of the bare court name.
+    if re.search(
+        r"\b(?:district|superior|bankruptcy) court\b"
+        r"|\bplaintiff\b|\bdefendant\b|\bmotion\b"
+        r"|\bpetitioner\b|\brespondent\b|\bon writ of certiorari\b|\bbrief (?:for|of)\b",
+        searchable,
+        re.I,
+    ):
         blue_evidence.append("court_filing_language")
     if re.search(r"\blaw review\b|\bseminar paper\b|\bthis (?:article|note)\b|\bscholarly\b", searchable, re.I):
         white_evidence.append("academic_language")
+    # Case-sensitive "By" (not re.I): legal filings use ALL-CAPS or
+    # colon-suffixed signature-block conventions ("BY THE COURT", "BY:
+    # John Smith", "by order of the court"), none of which match a literal
+    # "By " followed by capitalized name-like words -- only a true academic
+    # byline does.
     if re.search(
-        r"^[ \t]*by[ \t]+[A-Z][a-zA-Z'.-]*(?:[ \t]+[A-Z][a-zA-Z'.-]*){1,3}[ \t]*$",
+        r"^[ \t]*By[ \t]+[A-Z][a-zA-Z'.-]*(?:[ \t]+[A-Z][a-zA-Z'.-]*){1,3}[ \t]*$",
         ir.text[:300],
-        re.I | re.M,
+        re.M,
     ):
         white_evidence.append("author_byline")
     note_count = len(ir.blocks_of_kind("footnote")) + len(ir.blocks_of_kind("endnote"))

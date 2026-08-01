@@ -5,7 +5,7 @@ import pytest
 from autocite_mcp.slm_runtime import CallableSLMRuntime
 
 from autocite_mcp.tools import (
-    _CPU_BOUND_CONCURRENCY,
+    _CPU_BOUND_EXECUTOR,
     check_citations,
     check_single_citation,
     convert_citation,
@@ -139,11 +139,12 @@ async def test_run_cpu_bound_caps_concurrent_thread_executions():
     # Without a cap, enough concurrent citation-dense requests could exhaust
     # the shared default thread pool that uploaded-document parsing,
     # desktop reads, and SLM generation also depend on. Verify the actual
-    # number of simultaneous thread executions never exceeds the semaphore.
+    # number of simultaneous thread executions never exceeds the executor's
+    # worker cap.
     import threading
     import time
 
-    cap = _CPU_BOUND_CONCURRENCY._value
+    cap = _CPU_BOUND_EXECUTOR._max_workers
     lock = threading.Lock()
     current = 0
     peak = 0
@@ -159,6 +160,35 @@ async def test_run_cpu_bound_caps_concurrent_thread_executions():
 
     await asyncio.gather(*[run_cpu_bound(slow_fn) for _ in range(cap * 3)])
     assert peak <= cap
+
+
+def test_run_cpu_bound_survives_repeated_asyncio_run_calls():
+    # Regression: run_cpu_bound previously enforced its concurrency cap with
+    # a module-level asyncio.Semaphore. A semaphore only binds its internal
+    # state to the running event loop the first time it must actually wait
+    # (i.e. genuine contention, not merely being awaited) -- so a single
+    # review rarely triggered it, but the desktop app runs many concurrent
+    # citation checks *within* one review's asyncio.run() call, easily
+    # exceeding the cap and forcing a wait, which bound the semaphore to
+    # that review's event loop. asyncio.run() closes its loop when the
+    # review finishes, so the *next* review's asyncio.run() -- a fresh
+    # loop -- raised "bound to a different event loop" the moment its own
+    # concurrent load forced the semaphore to wait again. A ThreadPoolExecutor
+    # has no loop affinity, so this must keep working across as many
+    # separate asyncio.run() calls, each with contention exceeding the cap,
+    # as the desktop app makes over its lifetime.
+    def slow(x):
+        import time
+
+        time.sleep(0.01)
+        return x
+
+    async def one_review():
+        overload = _CPU_BOUND_EXECUTOR._max_workers * 3
+        return await asyncio.gather(*[run_cpu_bound(slow, i) for i in range(overload)])
+
+    for _ in range(3):
+        assert asyncio.run(one_review())
 
 
 def test_capabilities_disclose_verification_limits():

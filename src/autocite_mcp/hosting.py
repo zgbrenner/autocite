@@ -117,8 +117,12 @@ class BearerGate:
                 )
                 return
 
+        response_started = False
+
         async def send_no_store(message: dict[str, Any]) -> None:
+            nonlocal response_started
             if message.get("type") == "http.response.start":
+                response_started = True
                 headers = [
                     (key, value)
                     for key, value in message.get("headers", [])
@@ -132,12 +136,21 @@ class BearerGate:
         try:
             await self.app(scope, capped_receive, send_no_store)
         except _RequestEntityTooLarge:
-            await _send_json(
-                send,
-                413,
-                "request_too_large",
-                "The request body exceeds the maximum allowed size.",
-            )
+            # The oversized-body exception unwinds through the wrapped app's
+            # own error handling (e.g. Starlette's ServerErrorMiddleware),
+            # which may already have started a response of its own before
+            # this except runs. Sending a second http.response.start would
+            # violate the ASGI protocol, so only emit the clean 413 when no
+            # response has been committed yet; otherwise the inner app's own
+            # error response (still triggered by the same oversized body) is
+            # the best we can do.
+            if not response_started:
+                await _send_json(
+                    send,
+                    413,
+                    "request_too_large",
+                    "The request body exceeds the maximum allowed size.",
+                )
 
 
 def build_http_app(api_token: str | None = None) -> BearerGate:

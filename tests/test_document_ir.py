@@ -240,14 +240,59 @@ def test_academic_article_mentioning_supreme_court_classifies_as_whitepages():
         "Respectfully submitted,\n\nBy: John Smith\nAttorney for Plaintiff",
         "By: /s/ Jane Doe",
         "By Jane M. Doe, Esq.",
+        "BY THE COURT",
+        "BY ELECTRONIC FILING",
+        "BY ECF AND EMAIL",
+        "by order of the court",
+        "by john q public",
     ],
 )
 def test_legal_signature_blocks_do_not_trigger_the_byline_heuristic(signature_block):
-    text = f"IN THE UNITED STATES DISTRICT COURT\n\nPlaintiff moves for relief.\n\n{signature_block}"
+    # Regression: the byline heuristic originally used re.I, which made its
+    # [A-Z] "capitalized name" constraint meaningless -- ALL-CAPS legal
+    # boilerplate ("BY THE COURT", "BY ELECTRONIC FILING") and lowercase
+    # prose ("by order of the court") all satisfied [A-Za-z] under re.I and
+    # false-positived as an academic byline. The heuristic now requires a
+    # literal "By " (case-sensitive) to fire.
+    #
+    # No other blue signal is present here (no "district court", "motion",
+    # etc.), so if the byline heuristic misfired it would flip the whole
+    # document to whitepages rather than merely appearing in the losing
+    # side's conflicting_evidence -- checking both evidence and
+    # conflicting_evidence would still catch a milder false positive too.
+    text = signature_block
     ir = parse_text_ir(text, filename="motion.txt")
     result = classify_document_mode(ir)
     assert "author_byline" not in result["evidence"]
+    assert "author_byline" not in result["conflicting_evidence"]
+
+
+def test_footnoted_supreme_court_brief_still_classifies_as_bluepages():
+    # Regression: the fix for the academic-article false positive (above)
+    # removed bare "supreme" from the court-filing regex entirely, which
+    # broke real Supreme Court merits briefs -- they say
+    # Petitioner/Respondent, not plaintiff/defendant, rarely say "district
+    # court" in their opening pages, and with footnotes present the
+    # inline_citations signal is suppressed (see the `and not note_count`
+    # guard), leaving court_filing_language as the only signal that can
+    # possibly keep the document on bluepages. Appellate-caption language
+    # (petitioner/respondent/on writ of certiorari/brief for) now covers
+    # this case instead of the bare court name.
+    text = (
+        "No. 22-451\n\n"
+        "IN THE SUPREME COURT OF THE UNITED STATES\n\n"
+        "JOHN DOE, Petitioner,\nv.\nJANE ROE, Respondent.\n\n"
+        "ON WRIT OF CERTIORARI TO THE UNITED STATES COURT OF APPEALS\n\n"
+        "BRIEF FOR PETITIONER\n\n"
+        "This case concerns the scope of qualified immunity.[1] The court "
+        "of appeals erred in its analysis.[2]\n\n"
+        "[1] See Smith v. Jones, 123 F.3d 456 (9th Cir. 2020).\n\n"
+        "[2] See Doe v. State, 456 F.3d 789 (9th Cir. 2021)."
+    )
+    ir = parse_text_ir(text, filename="scotus_brief.txt")
+    result = classify_document_mode(ir)
     assert result["selected_mode"] == "bluepages"
+    assert "court_filing_language" in result["evidence"]
 
 
 def test_load_document_bytes_keeps_flat_text_compatibility_and_exposes_ir():

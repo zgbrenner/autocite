@@ -55,6 +55,33 @@ def test_lint_orphan_id_lookup_scales_far_better_than_quadratically():
     assert large < max(small, 0.002) * 25, f"small={small:.4f}s large={large:.4f}s"
 
 
+def test_lint_orphan_id_lookup_is_correct_for_non_monotonic_citation_ends():
+    # Regression: substantive_ends was built by taking .end values in the
+    # SAME order as `substantive` (start,end order, per extract()'s sort),
+    # and a comment claimed that made substantive_ends ascending. It does
+    # not: a citation nested inside another (e.g. a "(citing ...)"
+    # parenthetical) starts later but can end earlier, so start order does
+    # not imply end order. bisect_left silently returns wrong answers on a
+    # non-ascending list instead of raising, so this produced false
+    # "unresolved antecedent" (SHORT_FORM_ORPHAN_ID) flags.
+    #
+    # Three substantive citations in start order (0, 50, 60) with ends
+    # (100, 700, 690) -- non-ascending -- followed by an "Id." at 695.
+    # Bisecting the unsorted list (start order) picks end=100 as the
+    # "closest prior" (distance 595, over the 500-char orphan threshold),
+    # wrongly flagging it as orphaned; bisecting the correctly end-sorted
+    # list picks end=690 (distance 5), correctly resolving it.
+    text = "x" * 750
+    citations = [
+        CitationMatch("case", "case1", 0, 100, {}),
+        CitationMatch("case", "case2", 50, 700, {}),
+        CitationMatch("case", "case3", 60, 690, {}),
+        CitationMatch("short_form", "Id.", 695, 698, {"form": "id", "parser": "fallback"}),
+    ]
+    issues = CitationEngine()._lint(text, citations, "bluepages")
+    assert not any(issue.code == "SHORT_FORM_ORPHAN_ID" for issue in issues)
+
+
 def test_extracts_multiple_legal_source_types():
     text = (
         "See Obergefell v. Hodges, 576 U.S. 644, 675 (2015); "

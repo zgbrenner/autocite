@@ -557,25 +557,49 @@ def _internet_findings(ir: DocumentIR, graph: CitationGraph, mode: str) -> list[
 _BIDI_CONTROL_CHARACTERS = frozenset(
     chr(codepoint) for codepoint in (0x202A, 0x202B, 0x202C, 0x202D, 0x202E)
 )
+_BIDI_CONTROL_PATTERN = re.compile("[" + "".join(sorted(_BIDI_CONTROL_CHARACTERS)) + "]")
+
+# A hostile or corrupted document can carry many thousands of Bidi control
+# characters; emitting one RuleFinding per occurrence made this an unbounded
+# output amplifier (500k characters in a 1.5MB input produced 500k findings,
+# ~300MB serialized), so report only the first few individually and roll the
+# rest into a single summary finding.
+_MAX_BIDI_FINDINGS = 20
 
 
 def _document_integrity_findings(ir: DocumentIR, graph: CitationGraph, mode: str) -> list[RuleFinding]:
     del graph  # applies uniformly regardless of citation mode; mode still used below for rule_profile
-    findings: list[RuleFinding] = []
-    for index, character in enumerate(ir.text):
-        if character in _BIDI_CONTROL_CHARACTERS:
-            findings.append(
-                _finding(
-                    "BIDI_CONTROL_CHARACTER_PRESENT",
-                    mode,
-                    index,
-                    index + 1,
-                    character,
-                    "An explicit Bidi override/embedding/pop-formatting character is "
-                    "present; confirm the surrounding text displays as intended before "
-                    "relying on it, especially around citation-critical digits.",
-                )
+    positions = [match.start() for match in _BIDI_CONTROL_PATTERN.finditer(ir.text)]
+    if not positions:
+        return []
+    findings = [
+        _finding(
+            "BIDI_CONTROL_CHARACTER_PRESENT",
+            mode,
+            index,
+            index + 1,
+            ir.text[index],
+            "An explicit Bidi override/embedding/pop-formatting character is "
+            "present; confirm the surrounding text displays as intended before "
+            "relying on it, especially around citation-critical digits.",
+        )
+        for index in positions[:_MAX_BIDI_FINDINGS]
+    ]
+    remaining = len(positions) - _MAX_BIDI_FINDINGS
+    if remaining > 0:
+        findings.append(
+            _finding(
+                "BIDI_CONTROL_CHARACTER_PRESENT",
+                mode,
+                positions[_MAX_BIDI_FINDINGS],
+                positions[-1] + 1,
+                "",
+                f"{remaining} additional Bidi override/embedding/pop-formatting "
+                f"character(s) are present beyond the {_MAX_BIDI_FINDINGS} reported "
+                f"individually above ({len(positions)} total); review the full "
+                "document before relying on its displayed text.",
             )
+        )
     return findings
 
 

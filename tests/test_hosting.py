@@ -128,6 +128,42 @@ def test_bearer_gate_allows_body_under_the_cap():
     assert result[0]["status"] == 200
 
 
+def test_bearer_gate_does_not_double_send_when_real_starlette_app_races_the_cap():
+    # Regression: a bare async-def inner app can never exhibit this bug,
+    # because only a real Starlette app installs ServerErrorMiddleware,
+    # which reacts to the same _RequestEntityTooLarge exception by sending
+    # its own error response through our wrapped send *before* our except
+    # clause runs -- so sending an unconditional 413 there is a second
+    # http.response.start, an ASGI protocol violation. This test drives a
+    # real Starlette app through a streamed (no declared Content-Length)
+    # body that exceeds the cap, and asserts the gate returns a single,
+    # well-formed response instead of raising or double-sending.
+    from starlette.applications import Starlette
+    from starlette.requests import Request
+    from starlette.responses import JSONResponse
+    from starlette.routing import Route
+    from starlette.testclient import TestClient
+
+    async def echo(request: Request) -> JSONResponse:
+        payload = await request.body()
+        return JSONResponse({"received": len(payload)})
+
+    inner = Starlette(routes=[Route("/echo", echo, methods=["POST"])])
+    gate = BearerGate(inner, token=None)
+
+    def oversized_stream():
+        chunk = b"a" * (1024 * 1024)
+        sent = 0
+        while sent <= _MAX_REQUEST_BODY_BYTES:
+            yield chunk
+            sent += len(chunk)
+
+    client = TestClient(gate)
+    response = client.post("/echo", content=oversized_stream())
+    assert response.status_code in {413, 500}
+    assert response.headers.get("content-length") == str(len(response.content))
+
+
 def test_bearer_gate_leaves_health_public():
     async def inner(scope, receive, send):
         await send({"type": "http.response.start", "status": 200, "headers": []})

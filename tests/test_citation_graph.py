@@ -81,6 +81,35 @@ def test_same_citation_sentence_edges_match_full_pairwise_scan_on_realistic_text
     }
 
 
+def test_same_citation_sentence_edge_survives_footnote_position_reordering():
+    # Regression: occurrence_nodes is ordered by _logical_key, which
+    # relocates a footnote's citations to their reference marker's position
+    # in the body -- not their own .start -- so occurrence_nodes is NOT
+    # sorted by textual position whenever a footnote is present. The
+    # sentence-edge early break previously assumed occurrence_nodes order
+    # was textual order, so once it hit the footnote-relocated occurrence
+    # (whose true .start is far away, near the end of the document) it saw
+    # a fabricated sentence break spanning the whole document and stopped
+    # scanning -- silently losing the genuinely adjacent Smith/Doe pair,
+    # separated only by "; [1] " in the body text.
+    text = (
+        "See Smith v. Jones, 123 F.3d 456 (9th Cir. 2020);[1] Doe v. State, 456 F.3d 789 (9th Cir. 2021). "
+        "The panel then turned to the remedy.\n\n"
+        "[1] See Brown v. Board, 347 U.S. 483 (1954)."
+    )
+    ir = parse_text_ir(text)
+    graph = build_citation_graph(ir)
+    starts = {occ.occurrence_id: occ.start for occ in graph.occurrences}
+    smith_id = next(oid for oid, start in starts.items() if start == 4)
+    doe_id = next(oid for oid, start in starts.items() if start == 53)
+    sentence_edges = {
+        (edge.source_id, edge.target_id)
+        for edge in graph.edges
+        if edge.edge_type == "same_citation_sentence"
+    }
+    assert (smith_id, doe_id) in sentence_edges
+
+
 def test_zero_width_characters_do_not_hide_a_short_form_citation():
     # _raw_occurrences' custom short-form patterns (Id./supra/etc.) and the
     # statutory-short/hereinafter scans all matched directly against
