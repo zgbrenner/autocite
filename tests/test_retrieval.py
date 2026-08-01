@@ -88,9 +88,16 @@ def test_rule_index_round_trip_is_reproducible(tmp_path: Path):
     assert RuleLibrary.load_index(path) == library
 
 
-def test_local_passage_embedding_backend_reports_missing_optional_dependency():
+def test_local_passage_embedding_backend_reports_missing_optional_dependency(monkeypatch):
+    import sys
+
     from autocite_mcp.retrieval import LocalPassageEmbeddingBackend
 
+    # Force the ImportError branch regardless of whether the optional
+    # 'retrieval' extra (sentence-transformers) happens to be installed in
+    # this environment -- this test is specifically about that code path,
+    # not about whatever the ambient environment has installed.
+    monkeypatch.setitem(sys.modules, "sentence_transformers", None)
     backend = LocalPassageEmbeddingBackend()
     with pytest.raises(RuntimeError, match="optional 'retrieval' dependencies"):
         backend.encode(["a", "b"])
