@@ -101,6 +101,18 @@ def test_flags_orphan_id_short_form():
     assert any(issue["code"] == "SHORT_FORM_ORPHAN_ID" for issue in report["issues"])
 
 
+def test_orphan_ibid_short_form_message_names_ibid_not_id():
+    # eyecite classifies "Ibid." under the same IdCitation/"id" form as
+    # "Id.", so it hits the same orphan-check branch -- found via real-world
+    # document testing (a real SCOTUS opinion used house-style "Ibid."),
+    # where the flagged message wrongly said "Id." must unambiguously refer
+    # to..." even though the actual token was "Ibid.".
+    report = CitationEngine().analyze("Ibid. at 12.", mode="whitepages")
+    issue = next(item for item in report["issues"] if item["code"] == "SHORT_FORM_ORPHAN_ID")
+    assert "Ibid." in issue["message"]
+    assert "Id." not in issue["message"]
+
+
 def test_whitepages_flags_unarchived_bare_url():
     report = CitationEngine().analyze(
         "See https://example.com/legal-update.", mode="whitepages"
@@ -131,6 +143,51 @@ def test_uses_eyecite_full_span_without_including_signal():
     assert case.components["case_name"] == "Brown v. Board of Education"
     assert short_form.text == "Id. at 496"
     assert short_form.components["resolved_to"] == case.components["resolved_to"]
+
+
+def test_california_in_line_citation_case_name_excludes_enclosing_parenthetical():
+    # California's standard in-line citation form embeds the whole citation
+    # inside a sentence parenthetical with the year directly after the case
+    # name: "(Case v. Case (Year) Vol Rep Page.)". Found via real-world
+    # document testing (a real Cal. Ct. App. opinion) -- the leading "("
+    # and the embedded "(Year)" were both being swept into case_name.
+    text = (
+        "The rule is settled. (Steiner v. Superior Court (2013) "
+        "220 Cal.App.4th 1479, 1485.) Liability follows accordingly."
+    )
+    citations = CitationEngine().extract(text)
+    case = next(item for item in citations if item.source_type == "case")
+    assert case.components["case_name"] == "Steiner v. Superior Court"
+    assert case.components["year"] == "2013"
+
+
+def test_year_metadata_is_not_trusted_when_absent_from_the_citations_own_text():
+    # eyecite can leak a neighboring citation's year metadata onto the next
+    # citation when the preceding one has a page-range plus pincite (e.g.
+    # "215-423, 340"). Found via real-world document testing (a real SCOTUS
+    # opinion): a citation plainly reading "(June 5, 1984)" was reported
+    # with year "2022", leaked from an unrelated preceding citation.
+    text = (
+        "See 597 S. Ct. 215-423, 340 (June 24, 2022). "
+        "See also United States v. Leon, 104 U.S. 897 (June 5, 1984)."
+    )
+    citations = CitationEngine().extract(text)
+    cases = [item for item in citations if item.source_type == "case"]
+    leon = next(item for item in cases if "Leon" in item.text)
+    assert leon.components["year"] == "1984"
+
+
+def test_full_date_parenthetical_is_not_misreported_as_a_court():
+    # A citation parenthetical containing a full "Month Day, Year" date
+    # (real in less-formal citations, e.g. quoting a slip opinion) has no
+    # court abbreviation in it at all. Found via real-world document
+    # testing: the date fragment "June 24," was being reported as the
+    # `court` component.
+    text = "See generally 597 S. Ct. 215, 340 (June 24, 2022)."
+    citations = CitationEngine().extract(text)
+    case = next(item for item in citations if item.source_type == "case")
+    assert "court" not in case.components
+    assert case.components["year"] == "2022"
 
 
 def test_extracts_state_statute_and_supra_metadata():

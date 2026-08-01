@@ -80,15 +80,36 @@ def _case_match(text: str, citation: FullCaseCitation, resource_id: str | None) 
     core_start, _ = citation.span()
     case_name = text[start:core_start].strip().rstrip(",").strip()
     groups = citation.groups
-    year = _metadata(citation, "year")
     full_text = text[start:end]
+    year = _metadata(citation, "year")
+    if year and year not in full_text:
+        # eyecite can leak a neighboring citation's year metadata onto this
+        # one (observed when a preceding citation has a page-range plus
+        # pincite, e.g. "215-423, 340"). Trust the year only when it's
+        # actually present in this citation's own text -- never report a
+        # fact this citation doesn't itself contain.
+        year = None
+    if case_name.startswith("("):
+        # A citation embedded inside a sentence parenthetical, e.g.
+        # California's in-line "(Case v. Case (Year) Vol Rep Page.)" form --
+        # the enclosing parenthetical isn't part of the case name.
+        case_name = case_name[1:].lstrip()
+    if year and case_name.endswith(f"({year})"):
+        case_name = case_name[: -(len(year) + 2)].strip()
     court = None
     if year:
         parenthetical = re.search(r"\((?P<body>[^()]*)\)$", full_text)
         if parenthetical:
             body = parenthetical.group("body").strip()
             if body.endswith(year):
-                court = body[: -len(year)].strip()
+                candidate = body[: -len(year)].strip()
+                # A bare "(YYYY)" parenthetical leaves nothing before the
+                # year -- no court, correctly excluded by the `candidate`
+                # truthiness check below. A full "Month Day, YYYY)" date
+                # (seen in less-formal citations) leaves e.g. "June 24,"
+                # before the year, which is a date fragment, not a court.
+                if candidate and not re.fullmatch(r"[A-Z][a-z]+ \d{1,2},", candidate):
+                    court = candidate
     components = _with_present(
         case_name=case_name,
         volume=groups.get("volume"),

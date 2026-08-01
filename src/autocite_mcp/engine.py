@@ -411,6 +411,13 @@ class CitationEngine:
                         prior = [item for item in substantive if item.end < citation.start]
                         orphaned = not prior or citation.start - prior[-1].end > 500
                     if orphaned:
+                        # eyecite classifies "Ibid." (a real, if dated,
+                        # variant of "Id.") under the same IdCitation/"id"
+                        # form, so this branch also fires for it -- but the
+                        # static rule description always says "Id.", which
+                        # misnames the actual flagged token for a reviewer.
+                        surface_match = re.match(r"[A-Za-z]+\.?", citation.text)
+                        surface_form = surface_match.group(0) if surface_match else "Id."
                         issues.append(
                             _issue(
                                 "SHORT_FORM_ORPHAN_ID",
@@ -418,6 +425,10 @@ class CitationEngine:
                                 citation.start,
                                 citation.end,
                                 citation.text,
+                                message=(
+                                    f"“{surface_form}” must unambiguously refer to "
+                                    "the immediately preceding authority."
+                                ),
                                 confidence="high",
                             )
                         )
