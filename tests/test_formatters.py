@@ -51,6 +51,24 @@ def test_missing_required_fields_are_reported_not_invented():
         )
 
 
+def test_generate_citation_rejects_none_source_type_cleanly():
+    with pytest.raises(ValueError, match="Unsupported source_type"):
+        generate_citation(None, {"case_name": "x"})
+
+
+def test_generate_citation_rejects_non_mapping_fields_cleanly():
+    # generate_citation is a documented python_api access path (per
+    # local_product.py), not only reachable through the MCP tool-call JSON
+    # schema boundary that would otherwise reject a non-object "fields".
+    # Previously a non-dict fields argument crashed with an unhandled
+    # AttributeError from deep inside _required/_optional instead of a
+    # clean, typed error.
+    with pytest.raises(ValueError, match="mapping"):
+        generate_citation("case", "not-a-dict")
+    with pytest.raises(ValueError, match="mapping"):
+        generate_citation("case", ["not", "a", "dict"])
+
+
 def test_generates_statute_with_section_symbol_spacing():
     citation = generate_citation(
         "statute",

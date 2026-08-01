@@ -7,7 +7,11 @@ from autocite_mcp.tools import (
     check_single_citation,
     convert_citation,
     explain_issue,
+    get_citation_graph,
+    get_citation_guidance,
+    get_rule_context,
     list_capabilities,
+    review_document,
 )
 
 
@@ -39,9 +43,91 @@ def test_convert_state_statute_without_fabricating_title():
     assert result["converted"] == "Mass. Gen. Laws ch. 1, § 2 (West 1999)"
 
 
+def test_convert_citation_never_leaks_internal_resolved_to_bookkeeping():
+    # "resolved_to" is internal short-form-resolution bookkeeping (which
+    # citation_graph authority a citation resolved to), not a citation fact.
+    # Only the case branch used to strip it before returning facts_used;
+    # every other source_type leaked it.
+    for citation, mode in (
+        ("42 U.S.C. § 1983 (2018)", "whitepages"),
+        ("40 C.F.R. § 260.10 (2024)", "whitepages"),
+        ("U.S. Const. amend. IV", "whitepages"),
+    ):
+        result = convert_citation(citation, target_mode=mode)
+        assert "resolved_to" not in result["facts_used"], citation
+
+
 def test_explain_issue_returns_mode_specific_rule():
     result = explain_issue("REPORTER_ABBREVIATION", mode="whitepages")
     assert result["rule"] == "Rule 10"
+
+
+def test_explain_issue_covers_every_rule_findings_code():
+    # rule_findings (review_document's contextual-rule output) is populated
+    # exclusively from deterministic_rules.RULE_SPECS, a disjoint code
+    # namespace from rules.RULE_CATALOG (the codes explain_issue previously
+    # only recognized) -- a caller who saw one of these codes in
+    # rule_findings and called explain_issue to learn more always got
+    # "Unknown issue code". Every RULE_SPECS code must resolve.
+    from autocite_mcp.deterministic_rules import RULE_SPECS
+
+    for code in RULE_SPECS:
+        result = explain_issue(code)
+        assert result["code"] == code
+        assert result["description"]
+        assert result["rule"]
+
+
+def test_explain_issue_rejects_unknown_code():
+    with pytest.raises(ValueError, match="Unknown issue code"):
+        explain_issue("NOT_A_REAL_CODE")
+
+
+@pytest.mark.asyncio
+async def test_review_document_rejects_none_text_with_valueerror_not_attributeerror():
+    # A None text/citation/query argument previously crashed with an
+    # unhandled AttributeError from `.strip()` deep inside each function,
+    # rather than the same clean ValueError empty-string input already
+    # gets. Only reachable via direct Python API use (the MCP tool-call
+    # JSON schema boundary already rejects null), but local_product.py
+    # documents that as a real, supported access path.
+    with pytest.raises(ValueError, match="text must not be empty"):
+        await review_document(None)
+
+
+def test_check_citations_rejects_none_text_with_valueerror():
+    with pytest.raises(ValueError, match="text must not be empty"):
+        check_citations(None)
+
+
+def test_get_citation_graph_rejects_none_text_with_valueerror():
+    with pytest.raises(ValueError, match="text must not be empty"):
+        get_citation_graph(None)
+
+
+def test_get_rule_context_rejects_none_query_with_valueerror():
+    with pytest.raises(ValueError, match="query must not be empty"):
+        get_rule_context(None)
+
+
+def test_check_single_citation_rejects_none_citation_with_valueerror():
+    with pytest.raises(ValueError, match="citation must not be empty"):
+        check_single_citation(None)
+
+
+def test_convert_citation_rejects_none_citation_with_valueerror():
+    with pytest.raises(ValueError, match="citation must not be empty"):
+        convert_citation(None, target_mode="bluepages")
+
+
+def test_explain_issue_rejects_none_code_with_valueerror():
+    with pytest.raises(ValueError, match="Unknown issue code"):
+        explain_issue(None)
+
+
+def test_get_citation_guidance_treats_none_source_type_as_all():
+    result = get_citation_guidance(source_type=None)
+    assert result["sources"] == get_citation_guidance(source_type="all")["sources"]
 
 
 def test_capabilities_disclose_verification_limits():

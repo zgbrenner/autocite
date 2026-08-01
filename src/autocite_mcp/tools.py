@@ -22,7 +22,7 @@ from .document_ir import (
     locate_citations,
     parse_text_ir,
 )
-from .deterministic_rules import evaluate_document_rules, rule_coverage_matrix
+from .deterministic_rules import RULE_SPECS, evaluate_document_rules, rule_coverage_matrix
 from .engine import CitationEngine
 from .formatters import generate_citation, supported_source_types
 from .jurisdictions import (
@@ -49,58 +49,28 @@ from .verifiers import CourtListenerVerifier
 _ENGINE = CitationEngine()
 
 
-async def review_document(
+def _run_deterministic_pipeline(
     text: str,
+    source_ir: DocumentIR,
     *,
-    document_type: str = "auto",
-    mode: str = "auto",
-    jurisdiction: str | None = None,
-    jurisdiction_profile: str | None = None,
-    apply_safe_fixes: bool = True,
-    verify_cases: bool = False,
-    deep_review: bool = False,
-    include_source_text: bool = False,
-    use_slm: bool = False,
-    use_local_model: bool | None = None,
-    model_path: str = DEFAULT_MODEL,
-    base_model_id: str = "Qwen/Qwen3.5-0.8B",
-    local_model_directory: str | None = None,
-    model_device: str = "auto",
-    model_quantization: str = "none",
-    model_offline_only: bool = True,
-    model_max_context_length: int = 4096,
-    model_max_generated_tokens: int = 512,
-    model_timeout_seconds: float = 60.0,
-    model_seed: int = 42,
-    use_rule_retrieval: bool = True,
-    retrieval_top_k: int = 3,
-    slm_only: bool = False,
-    apply_slm_fixes: bool = False,
-    _slm_runtime: SLMRuntime | None = None,
-    _document_ir: DocumentIR | None = None,
+    resolved_mode: str,
+    detection: dict[str, Any],
+    apply_safe_fixes: bool,
+    slm_only: bool,
+    use_rule_retrieval: bool,
+    retrieval_top_k: int,
 ) -> dict[str, Any]:
-    """Primary end-to-end citecheck workflow intended for LLM hosts."""
-    if not text.strip():
-        raise ValueError("text must not be empty")
-    source_ir = _document_ir or parse_text_ir(text)
-    detection = (
-        classify_document_mode(
-            source_ir,
-            explicit_mode=mode,
-            document_type=document_type,
-        )
-        if _document_ir is not None
-        else infer_citation_mode(
-            document_type=document_type,
-            text=text,
-            explicit_mode=mode,
-        )
-    )
-    resolved_mode = str(detection["mode"])
-    profile = resolve_jurisdiction_profile(
-        jurisdiction_profile or jurisdiction,
-        resolved_mode,
-    )
+    """The CPU-bound deterministic analysis/fix pipeline, meant to run off the event loop.
+
+    Citation extraction and citation_graph's pairwise occurrence comparison
+    are not linear in the number of citations a document contains, so a
+    citation-dense document (a real brief's table of authorities, or an
+    adversarial one) can take tens of seconds. Running that synchronously
+    inside an async tool function would stall the event loop -- and every
+    other concurrent client of a hosted server -- for the duration. This
+    mirrors the asyncio.to_thread offload already used for parsing uploaded
+    document bytes in review_uploaded_document.
+    """
     initial = _ENGINE.analyze(text, mode=resolved_mode)
     structured_citations = locate_citations(source_ir, _ENGINE)
     citation_graph = build_citation_graph(source_ir, mode=resolved_mode)
@@ -157,6 +127,93 @@ async def review_document(
     )
     corrected_text = fixed["fixed_text"] if fixed else text
     final = _ENGINE.analyze(corrected_text, mode=resolved_mode)
+    return {
+        "initial": initial,
+        "structured_citations": structured_citations,
+        "citation_graph": citation_graph,
+        "contextual_rule_findings": contextual_rule_findings,
+        "retrieve_rules": retrieve_rules,
+        "retrieved_chunks": retrieved_chunks,
+        "model_rule_chunks": model_rule_chunks,
+        "fixed": fixed,
+        "corrected_text": corrected_text,
+        "final": final,
+    }
+
+
+async def review_document(
+    text: str,
+    *,
+    document_type: str = "auto",
+    mode: str = "auto",
+    jurisdiction: str | None = None,
+    jurisdiction_profile: str | None = None,
+    apply_safe_fixes: bool = True,
+    verify_cases: bool = False,
+    deep_review: bool = False,
+    include_source_text: bool = False,
+    use_slm: bool = False,
+    use_local_model: bool | None = None,
+    model_path: str = DEFAULT_MODEL,
+    base_model_id: str = "Qwen/Qwen3.5-0.8B",
+    local_model_directory: str | None = None,
+    model_device: str = "auto",
+    model_quantization: str = "none",
+    model_offline_only: bool = True,
+    model_max_context_length: int = 4096,
+    model_max_generated_tokens: int = 512,
+    model_timeout_seconds: float = 60.0,
+    model_seed: int = 42,
+    use_rule_retrieval: bool = True,
+    retrieval_top_k: int = 3,
+    slm_only: bool = False,
+    apply_slm_fixes: bool = False,
+    _slm_runtime: SLMRuntime | None = None,
+    _document_ir: DocumentIR | None = None,
+) -> dict[str, Any]:
+    """Primary end-to-end citecheck workflow intended for LLM hosts."""
+    if not (text or "").strip():
+        raise ValueError("text must not be empty")
+    source_ir = _document_ir or parse_text_ir(text)
+    detection = (
+        classify_document_mode(
+            source_ir,
+            explicit_mode=mode,
+            document_type=document_type,
+        )
+        if _document_ir is not None
+        else infer_citation_mode(
+            document_type=document_type,
+            text=text,
+            explicit_mode=mode,
+        )
+    )
+    resolved_mode = str(detection["mode"])
+    profile = resolve_jurisdiction_profile(
+        jurisdiction_profile or jurisdiction,
+        resolved_mode,
+    )
+    pipeline = await asyncio.to_thread(
+        _run_deterministic_pipeline,
+        text,
+        source_ir,
+        resolved_mode=resolved_mode,
+        detection=detection,
+        apply_safe_fixes=apply_safe_fixes,
+        slm_only=slm_only,
+        use_rule_retrieval=use_rule_retrieval,
+        retrieval_top_k=retrieval_top_k,
+    )
+    initial = pipeline["initial"]
+    structured_citations = pipeline["structured_citations"]
+    citation_graph = pipeline["citation_graph"]
+    contextual_rule_findings = pipeline["contextual_rule_findings"]
+    retrieve_rules = pipeline["retrieve_rules"]
+    retrieved_chunks = pipeline["retrieved_chunks"]
+    model_rule_chunks = pipeline["model_rule_chunks"]
+    fixed = pipeline["fixed"]
+    corrected_text = pipeline["corrected_text"]
+    final = pipeline["final"]
     model_requested = use_slm if use_local_model is None else use_local_model
     if model_requested or slm_only:
         runtime = _slm_runtime or TransformersSLMRuntime(
@@ -508,7 +565,8 @@ def get_citation_guidance(
     source_type: str = "all",
 ) -> dict[str, Any]:
     """Return compact mode- and source-specific citation guidance for an LLM."""
-    selected = None if source_type.strip().lower() == "all" else [source_type]
+    normalized_source_type = (source_type or "all").strip().lower()
+    selected = None if normalized_source_type == "all" else [normalized_source_type]
     return get_knowledge_pack(mode, selected)
 
 
@@ -519,7 +577,7 @@ def check_citations(
     apply_safe_fixes: bool = False,
 ) -> dict[str, Any]:
     """Analyze legal writing and optionally apply high-confidence fixes."""
-    if not text.strip():
+    if not (text or "").strip():
         raise ValueError("text must not be empty")
     if apply_safe_fixes:
         return _ENGINE.fix(text, mode=mode)
@@ -532,7 +590,7 @@ def get_citation_graph(
     mode: str = "bluepages",
 ) -> dict[str, Any]:
     """Build document-wide authority and short-form resolution state."""
-    if not text.strip():
+    if not (text or "").strip():
         raise ValueError("text must not be empty")
     normalized_mode = validate_mode(mode)
     return build_citation_graph(parse_text_ir(text), mode=normalized_mode).as_dict()
@@ -567,7 +625,7 @@ def get_rule_context(
     top_k: int = 3,
 ) -> dict[str, Any]:
     """Retrieve a small, source-attributed set of approved local rule summaries."""
-    if not query.strip():
+    if not (query or "").strip():
         raise ValueError("query must not be empty")
     if mode is not None:
         mode = validate_mode(mode)
@@ -596,7 +654,7 @@ def check_single_citation(
     mode: str = "bluepages",
 ) -> dict[str, Any]:
     """Analyze exactly one citation and return a focused result."""
-    if not citation.strip():
+    if not (citation or "").strip():
         raise ValueError("citation must not be empty")
     report = _ENGINE.analyze(citation, mode=mode)
     substantive = [
@@ -623,7 +681,7 @@ def convert_citation(
     output_style: str = "plain",
 ) -> dict[str, Any]:
     """Convert a recognized citation using only facts present in the input."""
-    if not citation.strip():
+    if not (citation or "").strip():
         raise ValueError("citation must not be empty")
     mode = validate_mode(target_mode)
     report = _ENGINE.analyze(citation, mode=mode)
@@ -636,6 +694,12 @@ def convert_citation(
         raise ValueError("Input must contain exactly one recognized citation")
     item = substantive[0]
     components = dict(item["components"])
+    # "resolved_to" is internal short-form-resolution bookkeeping (which
+    # citation_graph authority this citation resolved to), not a citation
+    # fact -- it must never leak into a caller-facing result. Stripped here,
+    # once, for every source_type rather than per-branch (the case branch
+    # previously did its own pop, which meant every other branch leaked it).
+    components.pop("resolved_to", None)
     source_type = item["source_type"]
 
     if source_type == "case":
@@ -648,7 +712,6 @@ def convert_citation(
             court = court_year[: year_match.start()].strip()
             if court:
                 components["court"] = court
-        components.pop("resolved_to", None)
         converted = generate_citation(
             "case",
             components,
@@ -723,19 +786,37 @@ async def verify_case_citations(text: str) -> dict[str, Any]:
 def explain_issue(code: str, *, mode: str = "bluepages") -> dict[str, Any]:
     """Explain an AutoCite issue code and its corresponding rule family."""
     normalized_mode = validate_mode(mode)
-    normalized_code = code.strip().upper()
+    normalized_code = (code or "").strip().upper()
     metadata = RULE_CATALOG.get(normalized_code)
-    if metadata is None:
-        raise ValueError(f"Unknown issue code: {code}")
-    return {
-        "code": normalized_code,
-        "title": metadata["title"],
-        "description": metadata["description"],
-        "severity": metadata["severity"],
-        "autofix": metadata["autofix"],
-        "mode": normalized_mode,
-        "rule": rule_reference(normalized_code, normalized_mode),
-    }
+    if metadata is not None:
+        return {
+            "code": normalized_code,
+            "title": metadata["title"],
+            "description": metadata["description"],
+            "severity": metadata["severity"],
+            "autofix": metadata["autofix"],
+            "mode": normalized_mode,
+            "rule": rule_reference(normalized_code, normalized_mode),
+        }
+    # review_document's own rule_findings are populated exclusively from
+    # RULE_SPECS (deterministic_rules.py's contextual-rule catalog), a
+    # disjoint code namespace from RULE_CATALOG above (the simpler
+    # engine-lint codes check_citations/check_single_citation surface).
+    # Without this fallback, explain_issue could never explain any code a
+    # caller actually saw in rule_findings -- the natural "see an issue
+    # code, explain it" workflow was completely broken for that catalog.
+    spec = RULE_SPECS.get(normalized_code)
+    if spec is not None:
+        return {
+            "code": normalized_code,
+            "title": normalized_code.replace("_", " ").title(),
+            "description": spec.original_rule_summary,
+            "severity": spec.severity,
+            "autofix": spec.automatic_correction_permitted,
+            "mode": normalized_mode,
+            "rule": spec.rule_family_reference,
+        }
+    raise ValueError(f"Unknown issue code: {code}")
 
 
 def list_capabilities() -> dict[str, Any]:

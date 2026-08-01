@@ -257,9 +257,11 @@ def generate_citation(
     output_style: str = "plain",
 ) -> str:
     """Generate a citation only from supplied facts; never infer missing metadata."""
+    if not isinstance(fields, Mapping):
+        raise ValueError("fields must be a mapping of field name to value")
     normalized_mode = validate_mode(mode)
     normalized_style = validate_output_style(output_style)
-    normalized_type = source_type.strip().lower()
+    normalized_type = (source_type or "").strip().lower()
     formatter = _FORMATTERS.get(normalized_type)
     if formatter is None:
         raise ValueError(f"Unsupported source_type: {source_type}")
