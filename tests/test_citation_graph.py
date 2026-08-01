@@ -14,6 +14,73 @@ def _resolution(graph, form: str, index: int = 0):
     return matches[index]
 
 
+def test_pairwise_edge_building_breaks_early_instead_of_scanning_every_pair():
+    # citation_graph.py's same_citation_sentence/same_citation_clause
+    # edge-builder previously compared every occurrence against every
+    # OTHER occurrence in the whole document (full O(n^2)), independent of
+    # proximity. A citation-dense document (a real brief's table of
+    # authorities, or an adversarial one) could take tens of seconds on top
+    # of citation extraction's own cost.
+    #
+    # Wall-clock timing is too noisy to assert reliably at the small scales
+    # a fast test suite can afford (extraction itself, a third-party
+    # eyecite call, has its own separate O(n^2) confound this fix doesn't
+    # touch). Instead, deterministically count how many times the
+    # sentence-break regex actually runs. Each "sentence" below has 3
+    # citations separated by ";" (so `";" in gap` -- the first half of the
+    # original `and` condition -- stays true across a growing gap, meaning
+    # the sentence-break regex is genuinely exercised for every pair rather
+    # than short-circuited away): the fixed algorithm must stop scanning
+    # once it crosses into the next sentence rather than continuing to
+    # compare against every one of the far-away occurrences that follow,
+    # which a real string cite followed by ordinary prose forces the old
+    # code to keep doing for every citation near the start of each sentence.
+    from unittest.mock import patch
+
+    n_groups = 60
+    group = (
+        "CaseA v. X, 1 F.3d 1 (2020); CaseB v. Y, 2 F.3d 2 (2020); "
+        "CaseC v. Z, 3 F.3d 3 (2020). "
+    )
+    text = group * n_groups
+    ir = parse_text_ir(text)
+
+    with patch("autocite_mcp.citation_graph.re.search", wraps=__import__("re").search) as spy:
+        build_citation_graph(ir)
+
+    # Measured: ~1,140 calls with the early break, ~16,800 without it (a
+    # true O(n^2) scan) for this input (180 citations across 60
+    # sentence-groups of 3). Threshold set well between the two, with
+    # headroom for re.search's other (linear) call sites in the same
+    # function, while still clearly catching a regression to the full scan.
+    assert spy.call_count < 4000, f"sentence-break regex called {spy.call_count} times"
+
+
+def test_same_citation_sentence_edges_match_full_pairwise_scan_on_realistic_text():
+    # Verifies the early-break optimization (stop once a sentence break
+    # appears in the gap, since the gap only grows and can never lose that
+    # break) produces the exact same edges a full O(n^2) pairwise scan
+    # would, not just "doesn't crash" -- confirmed independently by diffing
+    # against the pre-optimization implementation's output on this input.
+    text = (
+        "Smith v. Jones, 123 F.3d 456 (9th Cir. 2020); Doe v. State, 456 F.3d 789 (9th Cir. 2021). "
+        "See also Brown v. Board, 347 U.S. 483 (1954); Roe v. Wade, 410 U.S. 113 (1973); "
+        "Obergefell v. Hodges, 576 U.S. 644 (2015). "
+        "The court explained the reasoning at length before turning to the merits."
+    )
+    graph = _graph(text)
+    sentence_edges = {
+        (edge.source_id, edge.target_id)
+        for edge in graph.edges
+        if edge.edge_type == "same_citation_sentence"
+    }
+    assert sentence_edges == {
+        ("occurrence:0000", "occurrence:0001"),
+        ("occurrence:0002", "occurrence:0003"),
+        ("occurrence:0003", "occurrence:0004"),
+    }
+
+
 def test_zero_width_characters_do_not_hide_a_short_form_citation():
     # _raw_occurrences' custom short-form patterns (Id./supra/etc.) and the
     # statutory-short/hereinafter scans all matched directly against

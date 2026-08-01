@@ -423,12 +423,34 @@ def build_citation_graph(ir: DocumentIR, *, mode: str = "bluepages") -> Citation
         if index:
             edges.append(CitationEdge("immediately_preceding_occurrence", occurrence.occurrence_id, occurrence_nodes[index - 1].occurrence_id))
 
+    # same_footnote: full pairwise closure, but only within each footnote's
+    # own occurrence group -- grouping by note_id first avoids comparing
+    # every occurrence against every other occurrence in the whole
+    # document, when the vast majority of pairs don't share a footnote and
+    # could never produce this edge. Group sizes are bounded by how many
+    # citations one real footnote actually contains, not document length.
+    by_note: dict[str, list[OccurrenceNode]] = {}
+    for occurrence in occurrence_nodes:
+        if occurrence.location.note_id:
+            by_note.setdefault(occurrence.location.note_id, []).append(occurrence)
+    for note_id, group in by_note.items():
+        for group_index, left in enumerate(group):
+            for right in group[group_index + 1 :]:
+                edges.append(CitationEdge("same_footnote", left.occurrence_id, right.occurrence_id, {"note_id": note_id}))
+
     for left_index, left in enumerate(occurrence_nodes):
+        # same_citation_sentence/same_citation_clause: two citations
+        # separated only by "; " within one sentence. gap only grows as
+        # `right` moves forward (right.start only increases), so once a
+        # sentence break appears anywhere in gap, it's a prefix of every
+        # later gap too and `not re.search(...)` can never become true
+        # again for this `left` -- safe to stop scanning entirely rather
+        # than comparing against every remaining occurrence in the document.
         for right in occurrence_nodes[left_index + 1 :]:
-            if left.location.note_id and left.location.note_id == right.location.note_id:
-                edges.append(CitationEdge("same_footnote", left.occurrence_id, right.occurrence_id, {"note_id": left.location.note_id}))
             gap = text[left.end : right.start]
-            if ";" in gap and not re.search(r"\.\s+[A-Z]", gap):
+            if re.search(r"\.\s+[A-Z]", gap):
+                break
+            if ";" in gap:
                 edges.append(CitationEdge("same_citation_sentence", left.occurrence_id, right.occurrence_id))
                 edges.append(CitationEdge("same_citation_clause", left.occurrence_id, right.occurrence_id))
         prefix = text[max(0, left.start - 24) : left.start]

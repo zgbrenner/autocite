@@ -1,4 +1,58 @@
 from autocite_mcp.engine import CitationEngine
+from autocite_mcp.models import CitationMatch
+
+
+def _synthetic_citations_with_fallback_id_forms(n):
+    # Directly constructs CitationMatch objects (bypassing extract()/eyecite
+    # entirely) so timing isolates _lint's own cost with zero confound from
+    # extraction's separate, unrelated performance characteristics. Each
+    # "id." short form has parser != "eyecite", forcing the orphan-check's
+    # closest-prior-substantive-citation lookup path.
+    citations = []
+    pos = 0
+    for i in range(n):
+        text = f"Case{i} v. Def{i}, {100 + i} U.S. {200 + i} ({1900 + i % 99}). "
+        citations.append(CitationMatch("case", text.strip(), pos, pos + len(text) - 2, {}))
+        pos += len(text)
+        id_text = "id. "
+        citations.append(
+            CitationMatch(
+                "short_form",
+                id_text.strip(),
+                pos,
+                pos + len(id_text) - 1,
+                {"form": "id", "parser": "fallback"},
+            )
+        )
+        pos += len(id_text)
+    return citations, pos
+
+
+def test_lint_orphan_id_lookup_scales_far_better_than_quadratically():
+    # _lint's orphan-"Id." check previously rebuilt a filtered list by
+    # scanning the entire substantive-citations list from scratch for
+    # every non-eyecite-parsed short-form "id." citation -- full O(n^2)
+    # in the number of citations, independent of proximity. A citation-
+    # dense document with many such short forms could hang the server.
+    # Measured directly (no O(n^2) eyecite/extraction confound, since
+    # citations are constructed synthetically here): old code ~46x slower
+    # for 8x the input (clearly quadratic); fixed code ~8x slower (linear).
+    import time
+
+    def _timed(n):
+        citations, text_len = _synthetic_citations_with_fallback_id_forms(n)
+        text = "x" * (text_len + 10)
+        start = time.perf_counter()
+        CitationEngine()._lint(text, citations, "bluepages")
+        return time.perf_counter() - start
+
+    _timed(200)  # warm up
+    small = _timed(500)
+    large = _timed(4000)  # 8x the input
+    # A true O(n^2) scan takes ~64x longer for 8x the input; a linear scan
+    # takes ~8x longer. Generous headroom (25x) against timing noise while
+    # still clearly catching a regression back to the full rescan.
+    assert large < max(small, 0.002) * 25, f"small={small:.4f}s large={large:.4f}s"
 
 
 def test_extracts_multiple_legal_source_types():

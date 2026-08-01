@@ -449,6 +449,14 @@ class CitationEngine:
             for item in citations
             if item.source_type not in {"short_form", "internet"}
         ]
+        # citations (and therefore substantive, a filtered subset that
+        # preserves order) is already sorted by (start, end) -- see
+        # extract()'s `kept.sort(...)` above -- so substantive_ends is
+        # ascending and the "closest prior substantive citation" query
+        # below can bisect it in O(log n) instead of rebuilding a filtered
+        # list by scanning the whole thing for every short-form citation,
+        # which is what let a citation-dense document hang the server.
+        substantive_ends = [item.end for item in substantive]
         for citation in citations:
             if citation.source_type == "short_form":
                 form = citation.components.get("form", citation.text).lower().rstrip(".")
@@ -457,8 +465,8 @@ class CitationEngine:
                     if citation.components.get("parser") == "eyecite":
                         orphaned = not resolved_to
                     else:
-                        prior = [item for item in substantive if item.end < citation.start]
-                        orphaned = not prior or citation.start - prior[-1].end > 500
+                        prior_index = bisect.bisect_left(substantive_ends, citation.start) - 1
+                        orphaned = prior_index < 0 or citation.start - substantive[prior_index].end > 500
                     if orphaned:
                         # eyecite classifies "Ibid." (a real, if dated,
                         # variant of "Id.") under the same IdCitation/"id"
