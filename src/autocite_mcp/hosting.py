@@ -7,6 +7,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from .application_http import build_application_http_app
+from .documents import MAX_DOCUMENT_BYTES
 from .server import mcp
 
 ASGIApp = Callable[
@@ -17,6 +18,51 @@ ASGIApp = Callable[
     ],
     Awaitable[None],
 ]
+
+# JSON request bodies carry document bytes base64-encoded (~4/3 expansion)
+# plus a JSON envelope, so the ASGI-layer cap must clear that inflated size,
+# not the raw document limit.
+_MAX_REQUEST_BODY_BYTES = (MAX_DOCUMENT_BYTES * 4 // 3) + 65_536
+
+
+class _RequestEntityTooLarge(Exception):
+    """Raised by the size-capped receive callable once the cap is exceeded."""
+
+
+async def _send_json(
+    send,
+    status: int,
+    error: str,
+    message: str,
+    *,
+    extra_headers: list[tuple[bytes, bytes]] | None = None,
+) -> None:
+    payload = json.dumps({"error": error, "message": message}).encode("utf-8")
+    headers = [
+        (b"content-type", b"application/json"),
+        (b"cache-control", b"no-store"),
+        (b"content-length", str(len(payload)).encode("ascii")),
+        *(extra_headers or []),
+    ]
+    await send({"type": "http.response.start", "status": status, "headers": headers})
+    await send({"type": "http.response.body", "body": payload})
+
+
+def _size_capped_receive(
+    receive: Callable[[], Awaitable[dict[str, Any]]], limit: int
+) -> Callable[[], Awaitable[dict[str, Any]]]:
+    received = 0
+
+    async def capped_receive() -> dict[str, Any]:
+        nonlocal received
+        message = await receive()
+        if message.get("type") == "http.request":
+            received += len(message.get("body") or b"")
+            if received > limit:
+                raise _RequestEntityTooLarge()
+        return message
+
+    return capped_receive
 
 
 class BearerGate:
@@ -31,6 +77,26 @@ class BearerGate:
             await self.app(scope, receive, send)
             return
 
+        headers = {
+            key.decode("latin-1").lower(): value.decode("latin-1")
+            for key, value in scope.get("headers", [])
+        }
+
+        declared_length = headers.get("content-length")
+        if declared_length is not None:
+            try:
+                declared_bytes = int(declared_length)
+            except ValueError:
+                declared_bytes = None
+            if declared_bytes is not None and declared_bytes > _MAX_REQUEST_BODY_BYTES:
+                await _send_json(
+                    send,
+                    413,
+                    "request_too_large",
+                    "The request body exceeds the maximum allowed size.",
+                )
+                return
+
         path = str(scope.get("path") or "")
         protected_path = (
             path == "/mcp"
@@ -39,36 +105,15 @@ class BearerGate:
             or path.startswith("/app/")
         )
         if self.token and protected_path:
-            headers = {
-                key.decode("latin-1").lower(): value.decode("latin-1")
-                for key, value in scope.get("headers", [])
-            }
             supplied = headers.get("authorization", "")
             expected = f"Bearer {self.token}"
             if not secrets.compare_digest(supplied, expected):
-                payload = json.dumps(
-                    {
-                        "error": "unauthorized",
-                        "message": "A valid AutoCite bearer token is required.",
-                    }
-                ).encode("utf-8")
-                await send(
-                    {
-                        "type": "http.response.start",
-                        "status": 401,
-                        "headers": [
-                            (b"content-type", b"application/json"),
-                            (b"cache-control", b"no-store"),
-                            (b"www-authenticate", b"Bearer"),
-                            (
-                                b"content-length",
-                                str(len(payload)).encode("ascii"),
-                            ),
-                        ],
-                    }
-                )
-                await send(
-                    {"type": "http.response.body", "body": payload}
+                await _send_json(
+                    send,
+                    401,
+                    "unauthorized",
+                    "A valid AutoCite bearer token is required.",
+                    extra_headers=[(b"www-authenticate", b"Bearer")],
                 )
                 return
 
@@ -83,7 +128,16 @@ class BearerGate:
                 message = {**message, "headers": headers}
             await send(message)
 
-        await self.app(scope, receive, send_no_store)
+        capped_receive = _size_capped_receive(receive, _MAX_REQUEST_BODY_BYTES)
+        try:
+            await self.app(scope, capped_receive, send_no_store)
+        except _RequestEntityTooLarge:
+            await _send_json(
+                send,
+                413,
+                "request_too_large",
+                "The request body exceeds the maximum allowed size.",
+            )
 
 
 def build_http_app(api_token: str | None = None) -> BearerGate:
