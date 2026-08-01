@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import os
 from typing import Any
@@ -54,6 +53,7 @@ from .tools import (
     review_document as _review_document,
     review_uploaded_document as _review_uploaded_document,
     resolve_short_form as _resolve_short_form,
+    run_cpu_bound,
     verify_case_citations as _verify_case_citations,
 )
 from .workspace import WORKSPACE_HTML, workspace_payload
@@ -358,7 +358,7 @@ async def check_citations(
     # hosted server (this tool ran directly on the event loop with FastMCP's
     # own dispatch, unlike review_document -- see tools.py's
     # _run_deterministic_pipeline for the same pattern and its rationale).
-    return await asyncio.to_thread(
+    return await run_cpu_bound(
         _check_citations, text, mode=mode, apply_safe_fixes=apply_safe_fixes
     )
 
@@ -366,13 +366,13 @@ async def check_citations(
 @mcp.tool(title="Get the document citation graph", annotations=_READ_ONLY)
 async def get_citation_graph(text: str, mode: str = "bluepages") -> CitationGraphModel:
     """Return conservative authority identities, occurrences, edges, and resolutions."""
-    return await asyncio.to_thread(_get_citation_graph, text, mode=mode)
+    return await run_cpu_bound(_get_citation_graph, text, mode=mode)
 
 
 @mcp.tool(title="Resolve citation short forms", annotations=_READ_ONLY)
 async def resolve_short_form(text: str, mode: str = "bluepages") -> ResolveShortFormOutput:
     """Resolve short forms or return all plausible antecedents and an abstention."""
-    return await asyncio.to_thread(_resolve_short_form, text, mode=mode)
+    return await run_cpu_bound(_resolve_short_form, text, mode=mode)
 
 
 @mcp.tool(title="List deterministic rule coverage", annotations=_READ_ONLY)
@@ -404,7 +404,7 @@ def get_rule_context(
 @mcp.tool(title="Apply safe citation fixes", annotations=_READ_ONLY)
 async def fix_citations(text: str, mode: str = "bluepages") -> CheckCitationsResult:
     """Advanced: apply only deterministic, high-confidence mechanical citation fixes."""
-    return await asyncio.to_thread(_check_citations, text, mode=mode, apply_safe_fixes=True)
+    return await run_cpu_bound(_check_citations, text, mode=mode, apply_safe_fixes=True)
 
 
 @mcp.tool(title="Check one legal citation", annotations=_READ_ONLY)
@@ -413,7 +413,7 @@ async def check_single_citation(
     mode: str = "bluepages",
 ) -> CheckSingleCitationOutput:
     """Check exactly one recognized citation and return a focused correction report."""
-    return await asyncio.to_thread(_check_single_citation, citation, mode=mode)
+    return await run_cpu_bound(_check_single_citation, citation, mode=mode)
 
 
 @mcp.tool(title="Convert a legal citation", annotations=_READ_ONLY)

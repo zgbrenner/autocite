@@ -117,6 +117,37 @@ def test_public_rule_context_returns_attributed_chunks():
     assert result["chunks"][0]["chunk"]["source_filename"] == "short_forms.md"
 
 
+@pytest.mark.parametrize(
+    "rule_family",
+    [
+        "short forms: Id.",
+        "short forms: cases",
+        "short forms: statutes and regulations",
+        "supra and hereinafter",
+    ],
+)
+def test_rule_context_accepts_rule_spec_family_references(rule_family):
+    # deterministic_rules.RULE_SPECS labels each rule with a fine-grained
+    # rule_family_reference from a different vocabulary than the
+    # reference_library manifest's three broad rule_family buckets -- a
+    # caller who took rule_family_reference straight from a rule_findings
+    # entry previously got silently zero results for this value.
+    from autocite_mcp.tools import get_rule_context
+
+    result = get_rule_context("Id antecedent ambiguity", rule_family=rule_family)
+    assert result["chunks"]
+    assert result["chunks"][0]["chunk"]["source_filename"] == "short_forms.md"
+
+
+def test_rule_context_signal_family_aliases_map_to_signals_parentheticals():
+    from autocite_mcp.tools import get_rule_context
+
+    for rule_family in ("signals", "parentheticals", "citation groups and ordering"):
+        result = get_rule_context("signal punctuation", rule_family=rule_family)
+        assert result["chunks"], rule_family
+        assert result["chunks"][0]["chunk"]["source_filename"] == "signals_parentheticals.md"
+
+
 @pytest.mark.asyncio
 async def test_review_shows_exact_local_chunks_and_clean_review_can_skip():
     from autocite_mcp.tools import review_document

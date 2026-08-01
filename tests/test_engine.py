@@ -11,6 +11,43 @@ def test_extracts_multiple_legal_source_types():
     assert {"case", "statute", "regulation", "short_form"}.issubset(kinds)
 
 
+def test_zero_width_characters_do_not_hide_a_citation_from_extraction():
+    # Zero-width/invisible Unicode characters (ZWSP, ZWNJ, ZWJ, word joiner)
+    # render identically to a human reader whether present or not, but
+    # previously broke both eyecite's and AutoCite's own regex tokenization
+    # entirely -- a citation with these interspersed matched nothing at all.
+    # Real in copy-pasted text (rich-text/PDF extraction artifacts), not
+    # just adversarial input. Written with explicit \\uXXXX escapes (not
+    # literal characters) so the test stays auditable.
+    poisoned = (
+        "Brown​ v.‌ Board‍ of Education, 347⁠ U.S. 483 (1954)."
+    )
+    matches = CitationEngine().extract(poisoned)
+    assert len(matches) == 1
+    case = matches[0]
+    assert case.source_type == "case"
+    # The span must be valid against the ORIGINAL (unsanitized) text: the
+    # citation's own reported text, with spaces put back where the
+    # neutralized invisible characters were, must equal what's literally at
+    # that span in the original string.
+    original_slice = poisoned[case.start : case.end]
+    assert original_slice.translate(
+        {0x200B: " ", 0x200C: " ", 0x200D: " ", 0x2060: " "}
+    ) == case.text
+
+
+def test_zero_width_characters_do_not_block_a_safe_fix_from_applying():
+    # extract() finding the citation is necessary but not sufficient --
+    # _lint does its own separate regex matching and previously still
+    # failed silently even after extraction was fixed, so no fix was ever
+    # applied to a citation containing an invisible character.
+    poisoned = "42 USC​ § 1983."
+    result = CitationEngine().fix(poisoned)
+    assert result["applied_edits"]
+    assert result["applied_edits"][0]["code"] == "STATUTE_CODE_ABBREVIATION"
+    assert "U.S.C." in result["fixed_text"]
+
+
 def test_regulation_citation_with_letter_embedded_subsection_is_not_truncated():
     # eyecite's law-citation matcher stops at the digit-letter boundary in
     # "240.10b-5" and returns a truncated FullLawCitation ("17 C.F.R. §

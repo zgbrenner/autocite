@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import hashlib
+import os
 import re
 from dataclasses import asdict
 from typing import Any
@@ -47,6 +48,23 @@ from .slm_runtime import (
 from .verifiers import CourtListenerVerifier
 
 _ENGINE = CitationEngine()
+
+# Citation extraction and citation_graph construction are not linear in
+# citation count (see _run_deterministic_pipeline's docstring below), so an
+# unbounded number of concurrent citation-dense requests could exhaust the
+# shared default asyncio thread pool -- the same pool that uploaded-document
+# byte parsing (documents.py), desktop file reads (desktop.py,
+# desktop_preservation.py), and local SLM generation (proposal_models.py)
+# also depend on via their own asyncio.to_thread calls. Bounding concurrency
+# for just the CPU-bound citation-engine work isolates that blast radius
+# rather than starving those other paths too.
+_CPU_BOUND_CONCURRENCY = asyncio.Semaphore(max(1, os.cpu_count() or 4))
+
+
+async def run_cpu_bound(fn, /, *args, **kwargs):
+    """Run a CPU-bound citation-engine call off the event loop, with a concurrency cap."""
+    async with _CPU_BOUND_CONCURRENCY:
+        return await asyncio.to_thread(fn, *args, **kwargs)
 
 
 def _run_deterministic_pipeline(
@@ -193,7 +211,7 @@ async def review_document(
         jurisdiction_profile or jurisdiction,
         resolved_mode,
     )
-    pipeline = await asyncio.to_thread(
+    pipeline = await run_cpu_bound(
         _run_deterministic_pipeline,
         text,
         source_ir,
@@ -238,7 +256,11 @@ async def review_document(
         )
         if slm_review["corrected_text"] != corrected_text:
             corrected_text = str(slm_review["corrected_text"])
-            final = _ENGINE.analyze(corrected_text, mode=resolved_mode)
+            # Same event-loop-blocking hazard as the initial pipeline (see
+            # _run_deterministic_pipeline) -- re-analyzing SLM-modified text
+            # is the same CPU-bound _ENGINE.analyze call, just on a
+            # narrower, opt-in path (use_slm/slm_only, off by default).
+            final = await run_cpu_bound(_ENGINE.analyze, corrected_text, mode=resolved_mode)
     else:
         slm_review = {
             "status": "not_requested",

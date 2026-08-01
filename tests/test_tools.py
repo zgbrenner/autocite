@@ -1,8 +1,11 @@
+import asyncio
+
 import pytest
 
 from autocite_mcp.slm_runtime import CallableSLMRuntime
 
 from autocite_mcp.tools import (
+    _CPU_BOUND_CONCURRENCY,
     check_citations,
     check_single_citation,
     convert_citation,
@@ -12,6 +15,7 @@ from autocite_mcp.tools import (
     get_rule_context,
     list_capabilities,
     review_document,
+    run_cpu_bound,
 )
 
 
@@ -128,6 +132,33 @@ def test_explain_issue_rejects_none_code_with_valueerror():
 def test_get_citation_guidance_treats_none_source_type_as_all():
     result = get_citation_guidance(source_type=None)
     assert result["sources"] == get_citation_guidance(source_type="all")["sources"]
+
+
+@pytest.mark.asyncio
+async def test_run_cpu_bound_caps_concurrent_thread_executions():
+    # Without a cap, enough concurrent citation-dense requests could exhaust
+    # the shared default thread pool that uploaded-document parsing,
+    # desktop reads, and SLM generation also depend on. Verify the actual
+    # number of simultaneous thread executions never exceeds the semaphore.
+    import threading
+    import time
+
+    cap = _CPU_BOUND_CONCURRENCY._value
+    lock = threading.Lock()
+    current = 0
+    peak = 0
+
+    def slow_fn():
+        nonlocal current, peak
+        with lock:
+            current += 1
+            peak = max(peak, current)
+        time.sleep(0.05)
+        with lock:
+            current -= 1
+
+    await asyncio.gather(*[run_cpu_bound(slow_fn) for _ in range(cap * 3)])
+    assert peak <= cap
 
 
 def test_capabilities_disclose_verification_limits():

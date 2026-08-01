@@ -10,6 +10,43 @@ from .extractors import extract_eyecite_citations
 from .models import CitationIssue, CitationMatch
 from .rules import RULE_CATALOG, rule_reference, validate_mode
 
+# Zero-width/invisible Unicode characters that render identically to a
+# human reader whether present or not, but silently break both eyecite's
+# and AutoCite's own regex-based tokenization (which key on literal
+# whitespace/word boundaries), making a citation invisible to review
+# entirely -- e.g. a zero-width space inserted between "Brown" and "v."
+# defeats the "\s+v\.\s+" pattern in CASE_PATTERN below. Also includes the
+# explicit Bidi override/embedding/pop-formatting controls (the "Trojan
+# Source" characters used to visually misrepresent text order) for the same
+# tokenization reason -- deliberately NOT the newer Bidi *isolate*
+# characters (U+2066-U+2069), which are the modern, safer way to write
+# genuinely right-to-left legal citations and don't override surrounding
+# text, so neutralizing them would be a real regression for that content.
+# Mapped to a single regular space each (never removed) so every downstream
+# offset stays valid against the original text: a same-length substitution
+# cannot shift any later character's position. Keyed by codepoint (not
+# literal characters) so the mapping stays auditable in source rather than
+# embedding invisible bytes a reader can't see or verify.
+_INVISIBLE_CHARACTERS = str.maketrans(
+    {
+        0x200B: " ",  # zero width space
+        0x200C: " ",  # zero width non-joiner
+        0x200D: " ",  # zero width joiner
+        0x2060: " ",  # word joiner
+        0xFEFF: " ",  # zero width no-break space / BOM
+        0x202A: " ",  # left-to-right embedding
+        0x202B: " ",  # right-to-left embedding
+        0x202C: " ",  # pop directional formatting
+        0x202D: " ",  # left-to-right override
+        0x202E: " ",  # right-to-left override
+    }
+)
+
+
+def _neutralize_invisible_characters(text: str) -> str:
+    return text.translate(_INVISIBLE_CHARACTERS)
+
+
 # Source types that can serve as the antecedent of an "id"/"Id." short form.
 _SUBSTANTIVE_SOURCE_TYPES = frozenset(
     {"case", "statute", "regulation", "constitution", "journal_article"}
@@ -180,6 +217,11 @@ class CitationEngine:
     """Conservative legal citation analyzer and mechanical fixer."""
 
     def extract(self, text: str) -> list[CitationMatch]:
+        # Neutralize invisible characters up front so both eyecite and the
+        # fallback regex specs below see a normal, tokenizable string; every
+        # match span computed against this text is equally valid against
+        # the caller's original text (see _neutralize_invisible_characters).
+        text = _neutralize_invisible_characters(text)
         matches = list(extract_eyecite_citations(text))
         # ``intervals`` and ``substantive_ends`` are kept sorted so overlap and
         # antecedent checks are O(log n) instead of a linear scan of every
@@ -270,6 +312,13 @@ class CitationEngine:
 
     def analyze(self, text: str, *, mode: str = "bluepages") -> dict[str, Any]:
         normalized_mode = validate_mode(mode)
+        # _lint (unlike extract) does its own separate regex matching, so it
+        # needs the same invisible-character neutralization extract applies
+        # internally -- otherwise a citation extract() correctly finds can
+        # still fail every _lint check keyed on the same literal text,
+        # silently skipping fixes/issues for it. extract() re-applies this
+        # to the already-clean text below, which is a harmless no-op.
+        text = _neutralize_invisible_characters(text)
         citations = self.extract(text)
         issues = self._lint(text, citations, normalized_mode)
         counts: dict[str, int] = {}

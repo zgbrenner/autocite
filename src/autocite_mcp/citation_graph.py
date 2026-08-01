@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Mapping, Sequence
 
 from .document_ir import CitationLocation, DocumentIR, locate_citations
-from .engine import CitationEngine
+from .engine import CitationEngine, _neutralize_invisible_characters
 
 
 CASE_FULL = re.compile(
@@ -186,6 +186,13 @@ def _logical_key(ir: DocumentIR, location: CitationLocation, start: int) -> tupl
 
 def _raw_occurrences(ir: DocumentIR) -> list[_RawOccurrence]:
     raw: list[_RawOccurrence] = []
+    # Same rationale as CitationEngine.extract/analyze: neutralize
+    # zero-width/invisible characters before regex-matching short-form
+    # citations directly against ir.text below, so an invisible character
+    # can't hide a short form the way it can hide a full citation. A
+    # same-length substitution keeps every match span valid against ir.text
+    # unchanged (locate_citations already benefits from this internally).
+    text = _neutralize_invisible_characters(ir.text)
     for citation in locate_citations(ir, CitationEngine()):
         if citation.source_type == "short_form":
             continue
@@ -211,7 +218,7 @@ def _raw_occurrences(ir: DocumentIR) -> list[_RawOccurrence]:
     ]
     occupied = [(item.start, item.end) for item in raw]
     for pattern, source_type, form in custom:
-        for match in pattern.finditer(ir.text):
+        for match in pattern.finditer(text):
             if any(match.start() < end and start < match.end() for start, end in occupied):
                 continue
             location = _location(ir, match.start(), match.end())
@@ -235,7 +242,7 @@ def _raw_occurrences(ir: DocumentIR) -> list[_RawOccurrence]:
         for item in raw
         if item.source_type in {"statute", "regulation"} and item.form == "full"
     }
-    for match in STATUTORY_SHORT.finditer(ir.text):
+    for match in STATUTORY_SHORT.finditer(text):
         if any(match.start() < end and start < match.end() for start, end in occupied):
             continue
         section = _normalize(match.group("section"))
@@ -257,10 +264,10 @@ def _raw_occurrences(ir: DocumentIR) -> list[_RawOccurrence]:
                 _logical_key(ir, location, match.start()),
             )
         )
-    for definition in HEREINAFTER_DEF.finditer(ir.text):
+    for definition in HEREINAFTER_DEF.finditer(text):
         alias = definition.group("alias")
         alias_pattern = re.compile(rf"\b{re.escape(alias)}\b")
-        for match in alias_pattern.finditer(ir.text, definition.end()):
+        for match in alias_pattern.finditer(text, definition.end()):
             if any(match.start() < end and start < match.end() for start, end in occupied):
                 continue
             location = _location(ir, match.start(), match.end())
@@ -363,6 +370,11 @@ def _candidate(node: AuthorityNode, occurrence: OccurrenceNode, score: int, *fac
 def build_citation_graph(ir: DocumentIR, *, mode: str = "bluepages") -> CitationGraph:
     if mode not in {"bluepages", "whitepages"}:
         raise ValueError("mode must be bluepages or whitepages")
+    # Same rationale as _raw_occurrences: a same-length substitution so the
+    # hereinafter-alias regex scan below can't be defeated by an invisible
+    # character inside "(hereinafter "Alias")", while every match span
+    # stays valid against ir.text unchanged.
+    text = _neutralize_invisible_characters(ir.text)
     raw = _raw_occurrences(ir)
     authorities_by_key: dict[tuple[str, tuple[str, ...]], AuthorityNode] = {}
     occurrence_nodes: list[OccurrenceNode] = []
@@ -415,23 +427,23 @@ def build_citation_graph(ir: DocumentIR, *, mode: str = "bluepages") -> Citation
         for right in occurrence_nodes[left_index + 1 :]:
             if left.location.note_id and left.location.note_id == right.location.note_id:
                 edges.append(CitationEdge("same_footnote", left.occurrence_id, right.occurrence_id, {"note_id": left.location.note_id}))
-            gap = ir.text[left.end : right.start]
+            gap = text[left.end : right.start]
             if ";" in gap and not re.search(r"\.\s+[A-Z]", gap):
                 edges.append(CitationEdge("same_citation_sentence", left.occurrence_id, right.occurrence_id))
                 edges.append(CitationEdge("same_citation_clause", left.occurrence_id, right.occurrence_id))
-        prefix = ir.text[max(0, left.start - 24) : left.start]
+        prefix = text[max(0, left.start - 24) : left.start]
         signal = re.search(r"\b(see also|see|cf\.|accord|but see|contra)\s*$", prefix, re.I)
         if signal:
             edges.append(CitationEdge("signal_linked_to_citation_group", left.occurrence_id, left.occurrence_id, {"signal": signal.group(1)}))
-        if re.search(r"[“\"][^”\"]+[”\"]\s*$", ir.text[max(0, left.start - 180) : left.start]):
+        if re.search(r"[“\"][^”\"]+[”\"]\s*$", text[max(0, left.start - 180) : left.start]):
             edges.append(CitationEdge("quotation_linked_to_authority", left.occurrence_id, left.authority_id or left.occurrence_id))
-        suffix = ir.text[left.end : left.end + 180]
+        suffix = text[left.end : left.end + 180]
         if re.match(r"\s*\([^)]{2,160}\)", suffix):
             edges.append(CitationEdge("parenthetical_linked_to_authority", left.occurrence_id, left.authority_id or left.occurrence_id))
 
     resolutions: list[ResolutionResult] = []
     aliases: dict[str, str] = {}
-    for match in HEREINAFTER_DEF.finditer(ir.text):
+    for match in HEREINAFTER_DEF.finditer(text):
         prior = [item for item in occurrence_nodes if item.form == "full" and item.end <= match.start()]
         if prior and prior[-1].authority_id:
             aliases[_normalize(match.group("alias"))] = prior[-1].authority_id
@@ -467,7 +479,7 @@ def build_citation_graph(ir: DocumentIR, *, mode: str = "bluepages") -> Citation
                 )
                 if prior_authority_id:
                     candidates.append(_candidate(authority_by_id[prior_authority_id], prior, 100, "immediately_preceding_authority"))
-                gap = ir.text[prior.end : occurrence.start]
+                gap = text[prior.end : occurrence.start]
                 if ";" in gap:
                     disqualifying.append("intervening_citation_clause")
                 if len([item for item in group if item.authority_id]) > 1:

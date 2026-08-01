@@ -238,6 +238,20 @@ RULE_SPECS: dict[str, RuleSpec] = {
         severity="warning",
         confidence="medium",
     ),
+    "BIDI_CONTROL_CHARACTER_PRESENT": _spec(
+        "BIDI_CONTROL_CHARACTER_PRESENT",
+        "document integrity",
+        "Explicit Unicode bidirectional override/embedding characters can make "
+        "text visually misrepresent its own content (the 'Trojan Source' "
+        "technique) and are never required for ordinary right-to-left legal "
+        "citations, which the Unicode Bidi Algorithm already handles "
+        "correctly without them.",
+        context=("document text",),
+        facts=("bidi control character position",),
+        conditions=("an explicit Bidi override/embedding/pop-formatting character is present",),
+        severity="warning",
+        confidence="high",
+    ),
 }
 
 
@@ -532,6 +546,39 @@ def _internet_findings(ir: DocumentIR, graph: CitationGraph, mode: str) -> list[
     return findings
 
 
+# Explicit Bidi override/embedding/pop-formatting characters -- the "Trojan
+# Source" characters that can make text visually misrepresent its own
+# content. Deliberately NOT the newer Bidi isolate characters
+# (U+2066-U+2069), which are the modern, safer way to write genuinely
+# right-to-left legal citations. Mirrors engine._INVISIBLE_CHARACTERS'
+# override/embed/pop subset (kept as a separate constant here since this
+# scan reports positions rather than neutralizing them for matching).
+# Built from codepoints (not literal characters) so it stays auditable.
+_BIDI_CONTROL_CHARACTERS = frozenset(
+    chr(codepoint) for codepoint in (0x202A, 0x202B, 0x202C, 0x202D, 0x202E)
+)
+
+
+def _document_integrity_findings(ir: DocumentIR, graph: CitationGraph, mode: str) -> list[RuleFinding]:
+    del graph  # applies uniformly regardless of citation mode; mode still used below for rule_profile
+    findings: list[RuleFinding] = []
+    for index, character in enumerate(ir.text):
+        if character in _BIDI_CONTROL_CHARACTERS:
+            findings.append(
+                _finding(
+                    "BIDI_CONTROL_CHARACTER_PRESENT",
+                    mode,
+                    index,
+                    index + 1,
+                    character,
+                    "An explicit Bidi override/embedding/pop-formatting character is "
+                    "present; confirm the surrounding text displays as intended before "
+                    "relying on it, especially around citation-critical digits.",
+                )
+            )
+    return findings
+
+
 FAMILY_EVALUATORS: tuple[
     Callable[[DocumentIR, CitationGraph, str], list[RuleFinding]], ...
 ] = (
@@ -539,6 +586,7 @@ FAMILY_EVALUATORS: tuple[
     _signal_findings,
     _citation_context_findings,
     _internet_findings,
+    _document_integrity_findings,
 )
 
 

@@ -14,6 +14,21 @@ def _resolution(graph, form: str, index: int = 0):
     return matches[index]
 
 
+def test_zero_width_characters_do_not_hide_a_short_form_citation():
+    # _raw_occurrences' custom short-form patterns (Id./supra/etc.) and the
+    # statutory-short/hereinafter scans all matched directly against
+    # ir.text, unaffected by CitationEngine.extract's own fix -- an
+    # invisible character inside "Id." made the whole short form invisible
+    # to citation_graph too.
+    text = (
+        "Smith v. Jones, 123 F.3d 456 (9th Cir. 2020). "
+        "Id.​ at 460."
+    )
+    graph = _graph(text)
+    ids = [occ for occ in graph.occurrences if occ.form == "id"]
+    assert len(ids) == 1
+
+
 def test_valid_id_resolves_immediately_preceding_single_authority():
     graph = _graph("Smith v. Jones, 123 F.3d 456, 460 (9th Cir. 2020). Id. at 461.")
     result = _resolution(graph, "id")

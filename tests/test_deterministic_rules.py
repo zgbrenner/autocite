@@ -75,6 +75,29 @@ def test_rule_findings_never_claim_an_unapplied_safe_auto_fix():
         )
 
 
+def test_bidi_override_characters_are_flagged_never_silently_applied():
+    # Explicit Bidi override/embedding/pop-formatting characters (the
+    # "Trojan Source" characters) can make text visually misrepresent its
+    # own content -- e.g. digits inside a citation could display in a
+    # different order than they're actually stored. Previously these
+    # passed through into corrected_text completely unflagged; now they
+    # must be surfaced as review_required, never silently stripped or
+    # auto-applied (the tool's "never silently modify" principle), and
+    # never confused with the newer, legitimate Bidi isolate characters.
+    text = "347 U.S. ‮483‬ (1954)."
+    findings = _findings(text)
+    bidi_findings = [f for f in findings if f.issue_code == "BIDI_CONTROL_CHARACTER_PRESENT"]
+    assert len(bidi_findings) == 2
+    for finding in bidi_findings:
+        assert finding.correction_level == "review_required"
+        assert finding.suggestion is None
+
+    isolates_only = "⁦347 U.S. 483⁩ (1954)."
+    assert not any(
+        f.issue_code == "BIDI_CONTROL_CHARACTER_PRESENT" for f in _findings(isolates_only)
+    )
+
+
 def test_direct_quotation_without_pincite_requires_review():
     findings = _findings(
         'The court held that "the right is fundamental." Smith v. Jones, '

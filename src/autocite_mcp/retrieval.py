@@ -135,12 +135,39 @@ def _tokens(text: str) -> set[str]:
     return set(re.findall(r"[a-z0-9]+", text.casefold()))
 
 
+# deterministic_rules.RULE_SPECS labels each rule with a fine-grained
+# rule_family_reference (e.g. "short forms: Id.") from a taxonomy the
+# reference_library manifest's rule_family field only groups into three
+# broad topic buckets. Without this, a caller who took rule_family_
+# reference straight from a rule_findings entry (the natural "explain this
+# further" workflow) silently got zero results for most of the nine
+# possible values, with no error or hint that the vocabulary differed.
+# "pincites and quotations" has no reference_library content and is left
+# unmapped -- an empty result for it is accurate, not a vocabulary bug.
+_RULE_FAMILY_ALIASES = {
+    "short forms: id.": "short_forms",
+    "short forms: cases": "short_forms",
+    "short forms: statutes and regulations": "short_forms",
+    "supra and hereinafter": "short_forms",
+    "signals": "signals_parentheticals",
+    "parentheticals": "signals_parentheticals",
+    "citation groups and ordering": "signals_parentheticals",
+    "internet sources": "internet_sources",
+}
+
+
+def _normalize_rule_family(rule_family: str | None) -> str | None:
+    if rule_family is None:
+        return None
+    return _RULE_FAMILY_ALIASES.get(rule_family.strip().lower(), rule_family)
+
+
 def _metadata_match(chunk: RuleChunk, query: RetrievalQuery) -> bool:
     if query.mode and chunk.mode not in {"both", query.mode}:
         return False
     if query.source_type and chunk.source_type not in {"all", query.source_type}:
         return False
-    if query.rule_family and chunk.rule_family != query.rule_family:
+    if query.rule_family and chunk.rule_family != _normalize_rule_family(query.rule_family):
         return False
     if query.jurisdiction and chunk.jurisdiction not in {"general", "general_us", query.jurisdiction}:
         return False
