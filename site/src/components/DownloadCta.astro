@@ -1,0 +1,21 @@
+---
+import { SITE } from "../config";
+
+interface Props {
+  heading?: string;
+  body?: string;
+}
+
+const {
+  heading = "Review the citations. Keep control of the document.",
+  body = "Download the free local desktop app for full-document review, exact issue decisions, and reviewed exports.",
+} = Astro.props;
+---
+
+<div class="cta-band">
+  <div>
+    <h2>{heading}</h2>
+    <p>{body}</p>
+  </div>
+  <a class="button" href={SITE.releaseUrl}>Download AutoCite</a>
+</div>

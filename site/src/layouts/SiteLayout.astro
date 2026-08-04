@@ -1,0 +1,72 @@
+---
+import Footer from "../components/Footer.astro";
+import Header from "../components/Header.astro";
+import { SITE } from "../config";
+import { buildCanonical, buildPageTitle, buildSoftwareApplicationJsonLd } from "../lib/seo";
+import "../styles/global.css";
+
+interface Props {
+  title: string;
+  description: string;
+  pathname: string;
+  image?: string;
+  type?: "website" | "article";
+  noindex?: boolean;
+  jsonLd?: Record<string, unknown> | Array<Record<string, unknown>>;
+}
+
+const {
+  title,
+  description,
+  pathname,
+  image = "https://opengraph.githubassets.com/autocite-launch/zgbrenner/autocite",
+  type = "website",
+  noindex = false,
+  jsonLd,
+} = Astro.props;
+
+const canonical = buildCanonical(pathname);
+const fullTitle = buildPageTitle(title);
+const schemas = [buildSoftwareApplicationJsonLd(), ...(Array.isArray(jsonLd) ? jsonLd : jsonLd ? [jsonLd] : [])];
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="generator" content={Astro.generator} />
+    <title>{fullTitle}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <link rel="alternate" type="application/rss+xml" title="AutoCite guides" href="/rss.xml" />
+    {noindex && <meta name="robots" content="noindex, nofollow" />}
+
+    <meta property="og:site_name" content={SITE.name} />
+    <meta property="og:title" content={fullTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content={type} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={image} />
+    <meta property="og:image:alt" content="AutoCite private legal citation checker" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={fullTitle} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={image} />
+    <meta name="theme-color" content="#0b2554" />
+
+    {schemas.map((schema) => (
+      <script type="application/ld+json" set:html={JSON.stringify(schema)} />
+    ))}
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to content</a>
+    <Header />
+    <main id="main-content">
+      <slot />
+    </main>
+    <Footer />
+  </body>
+</html>

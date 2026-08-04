@@ -1,0 +1,26 @@
+# AutoCite
+
+AutoCite is an open-source, local-first legal citation checker for supported Bluepages and Whitepages citation mechanics.
+
+## Primary pages
+
+- Home: https://zgbrenner-autocite.pages.dev/
+- Download: https://zgbrenner-autocite.pages.dev/download/
+- Private Citation Risk Scan: https://zgbrenner-autocite.pages.dev/citation-risk-scan/
+- Methodology: https://zgbrenner-autocite.pages.dev/methodology/
+- Privacy: https://zgbrenner-autocite.pages.dev/privacy/
+- Guides: https://zgbrenner-autocite.pages.dev/guides/
+- Source: https://github.com/zgbrenner/autocite
+
+## Capabilities
+
+- Reviews supported legal citation patterns in DOCX, searchable PDF, Markdown, and TXT workflows.
+- Separates Bluepages practitioner review from Whitepages academic review.
+- Applies only supported deterministic mechanical fixes automatically.
+- Preserves non-citation prose and validates exact source spans before edits.
+- Runs standard desktop review locally with no application telemetry.
+- Can optionally retrieve CourtListener opinion text when deep review is explicitly enabled.
+
+## Important limitations
+
+AutoCite does not guarantee complete Bluebook compliance. It does not determine good-law status, proposition support, controlling authority, precedential weight, or whether a quotation is fair in context. It is not affiliated with or endorsed by The Bluebook, CourtListener, Free Law Project, any court, school, journal, or law firm.

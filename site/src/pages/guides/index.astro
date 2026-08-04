@@ -1,0 +1,47 @@
+---
+import { getCollection } from "astro:content";
+import SiteLayout from "../../layouts/SiteLayout.astro";
+import { buildBreadcrumbJsonLd } from "../../lib/seo";
+
+const guides = (await getCollection("guides")).sort(
+  (a, b) => b.data.publishedAt.valueOf() - a.data.publishedAt.valueOf(),
+);
+---
+
+<SiteLayout
+  title="Legal citation guides"
+  description="Practical, privacy-aware guides to Bluebook citation review, short forms, source verification, law-review workflows, and legal citation hallucinations."
+  pathname="/guides/"
+  jsonLd={buildBreadcrumbJsonLd([
+    { name: "AutoCite", path: "/" },
+    { name: "Guides", path: "/guides/" },
+  ])}
+>
+  <header class="page-hero">
+    <div class="shell page-hero-grid">
+      <div>
+        <h1>Legal citation guides for the work automation should not obscure.</h1>
+        <p>Clear explanations of citation mechanics, source review, privacy boundaries, and the judgment that remains with the lawyer or editor.</p>
+      </div>
+      <aside class="page-aside">
+        <strong>No gated downloads.</strong>
+        <p>Every guide is public, linkable, and written to answer the question before promoting the product.</p>
+      </aside>
+    </div>
+  </header>
+
+  <section class="section">
+    <div class="shell guide-grid">
+      {guides.map((guide) => (
+        <a class="guide-card" href={`/guides/${guide.id}/`}>
+          <time datetime={guide.data.publishedAt.toISOString()}>
+            {guide.data.publishedAt.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
+          </time>
+          <h2>{guide.data.title}</h2>
+          <p>{guide.data.description}</p>
+          <span>Read guide →</span>
+        </a>
+      ))}
+    </div>
+  </section>
+</SiteLayout>

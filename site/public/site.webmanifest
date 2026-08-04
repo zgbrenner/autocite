@@ -1,0 +1,17 @@
+{
+  "name": "AutoCite",
+  "short_name": "AutoCite",
+  "description": "Private legal citation checker for supported Bluepages and Whitepages review.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0b2554",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

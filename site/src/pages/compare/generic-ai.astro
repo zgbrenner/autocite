@@ -1,0 +1,103 @@
+---
+import DownloadCta from "../../components/DownloadCta.astro";
+import FaqList from "../../components/FaqList.astro";
+import SiteLayout from "../../layouts/SiteLayout.astro";
+import { buildBreadcrumbJsonLd, buildFaqJsonLd } from "../../lib/seo";
+
+const faq = [
+  {
+    question: "Is AutoCite more accurate than every general-purpose model?",
+    answer:
+      "AutoCite does not make that universal claim. Its advantage is a narrower architecture: deterministic citation rules, exact-span validation, explicit coverage, and refusal to invent missing facts during automatic correction.",
+  },
+  {
+    question: "Can I still use ChatGPT or Claude with AutoCite?",
+    answer:
+      "Yes. AutoCite can run as an MCP tool for compatible assistants, while keeping its citation-specific validation and structured review contract.",
+  },
+  {
+    question: "Does AutoCite use a language model at all?",
+    answer:
+      "An optional local small model can classify ambiguous issues or propose bounded suggestions. Deterministic validation remains authoritative for automatic edits.",
+  },
+];
+---
+
+<SiteLayout
+  title="AutoCite vs. generic AI citation checking"
+  description="Compare AutoCite's deterministic, local-first legal citation workflow with asking a general-purpose AI model to rewrite or fix citations."
+  pathname="/compare/generic-ai/"
+  jsonLd={[
+    buildBreadcrumbJsonLd([
+      { name: "AutoCite", path: "/" },
+      { name: "Compare", path: "/compare/generic-ai/" },
+      { name: "Generic AI", path: "/compare/generic-ai/" },
+    ]),
+    buildFaqJsonLd(faq),
+  ]}
+>
+  <header class="page-hero">
+    <div class="shell page-hero-grid">
+      <div>
+        <h1>A citation checker should know when not to complete the sentence.</h1>
+        <p>
+          General-purpose AI is optimized to produce a useful answer. AutoCite is optimized to preserve the document, expose evidence, and refuse unsupported citation facts.
+        </p>
+      </div>
+      <aside class="page-aside">
+        <strong>This is an architecture comparison.</strong>
+        <p>It is not a universal benchmark claim about every model, prompt, vendor, or legal task.</p>
+      </aside>
+    </div>
+  </header>
+
+  <section class="section">
+    <div class="shell">
+      <div class="section-heading centered">
+        <h2>Two very different defaults.</h2>
+        <p>The difference matters most when a plausible answer can introduce a false legal citation fact.</p>
+      </div>
+      <div class="steps" style="grid-template-columns: 1fr 1fr;">
+        <article class="step">
+          <span class="step-number">Generic AI</span>
+          <h3>Generate the most useful completion</h3>
+          <p>A model may rewrite prose, normalize style, infer missing structure, or confidently complete citation details unless the prompt and product controls prevent it.</p>
+        </article>
+        <article class="step">
+          <span class="step-number">AutoCite</span>
+          <h3>Validate the smallest supported change</h3>
+          <p>AutoCite records the original span, classifies correction risk, and applies only supported mechanical edits that still match the reviewed source text.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-soft">
+    <div class="shell split">
+      <div class="split-copy">
+        <h2>Where AutoCite narrows the risk</h2>
+        <p>It is deliberately less ambitious than an autonomous legal-writing agent. That narrower role is the point.</p>
+      </div>
+      <div class="principles">
+        <article class="principle"><span class="principle-icon">1</span><div><strong>Source-span validation</strong><p>An edit is rejected when the document changed and the reviewed citation no longer matches its recorded offset.</p></div></article>
+        <article class="principle"><span class="principle-icon">2</span><div><strong>Published correction levels</strong><p>Safe mechanical fixes are separated from review-required and unsupported questions.</p></div></article>
+        <article class="principle"><span class="principle-icon">3</span><div><strong>Document-wide citation graph</strong><p>Short forms can return explicit relationships or bounded candidates instead of a guessed antecedent.</p></div></article>
+        <article class="principle"><span class="principle-icon">4</span><div><strong>Local-first application</strong><p>Standard review runs locally without document telemetry or a public chatbot transcript.</p></div></article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="narrow">
+      <h2>Where a general model may still help</h2>
+      <div class="prose">
+        <p>General-purpose models can be useful for explaining unfamiliar terminology, brainstorming research plans, summarizing user-provided material, or helping draft non-authoritative working text. AutoCite can also expose its citation tools through MCP so an assistant can route citation work into the narrower reviewer.</p>
+        <p>The responsible choice depends on the document, confidentiality rules, supervision requirements, and the type of legal judgment involved.</p>
+      </div>
+      <h2 style="margin-top: 68px;">Frequently asked questions</h2>
+      <FaqList items={faq} />
+    </div>
+  </section>
+
+  <section class="section-tight"><div class="shell"><DownloadCta /></div></section>
+</SiteLayout>

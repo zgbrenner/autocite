@@ -1,0 +1,173 @@
+---
+import DownloadCta from "../components/DownloadCta.astro";
+import FaqList from "../components/FaqList.astro";
+import ProductReviewDemo from "../components/ProductReviewDemo.astro";
+import ProofStrip from "../components/ProofStrip.astro";
+import { SITE } from "../config";
+import SiteLayout from "../layouts/SiteLayout.astro";
+import { buildFaqJsonLd } from "../lib/seo";
+
+const faq = [
+  {
+    question: "Does AutoCite upload my legal documents?",
+    answer:
+      "Standard desktop review is local-first and the application has no telemetry. Optional deep source review can contact CourtListener only when the user explicitly enables it.",
+  },
+  {
+    question: "Does AutoCite guarantee complete Bluebook compliance?",
+    answer:
+      "No. AutoCite publishes supported rule coverage, applies only bounded mechanical fixes automatically, and identifies questions that still require legal or editorial judgment.",
+  },
+  {
+    question: "What documents can AutoCite review?",
+    answer:
+      "The desktop workflow supports DOCX, searchable PDF, Markdown, and TXT. Image-only PDFs require OCR before reliable text review.",
+  },
+  {
+    question: "Is AutoCite free?",
+    answer:
+      "Yes. AutoCite is open source under the MIT License, and release downloads are available from GitHub.",
+  },
+];
+---
+
+<SiteLayout
+  title="Private legal citation checker"
+  description="AutoCite fixes supported Bluebook citation problems locally without rewriting your legal prose or uploading confidential documents."
+  pathname="/"
+  jsonLd={buildFaqJsonLd(faq)}
+>
+  <section class="hero">
+    <div class="shell hero-grid">
+      <div class="hero-copy">
+        <h1>The private legal citation checker that leaves your writing alone.</h1>
+        <p class="hero-lead">
+          Review briefs, motions, memoranda, and law-review drafts locally. AutoCite applies only supported citation fixes, preserves non-citation prose, and shows exactly what still requires human judgment.
+        </p>
+        <div class="button-row hero-actions">
+          <a class="button button-blue" href={SITE.releaseUrl}>Download AutoCite free</a>
+          <a class="button button-secondary" href="/citation-risk-scan/">Try the private risk scan</a>
+        </div>
+        <div class="hero-note" aria-label="Key product facts">
+          <span>No account required</span>
+          <span>No application telemetry</span>
+          <span>Windows, macOS, and Linux</span>
+        </div>
+      </div>
+      <ProductReviewDemo />
+    </div>
+  </section>
+
+  <ProofStrip />
+
+  <section class="section">
+    <div class="shell">
+      <div class="section-heading centered">
+        <h2>From draft to reviewable citations in three steps.</h2>
+        <p>AutoCite is designed around the document you already have, not a blank chatbot conversation.</p>
+      </div>
+      <div class="steps">
+        <article class="step">
+          <span class="step-number">01</span>
+          <h3>Open your document</h3>
+          <p>Import DOCX, searchable PDF, Markdown, or TXT. The original source remains separate from AutoCite's working revision.</p>
+        </article>
+        <article class="step">
+          <span class="step-number">02</span>
+          <h3>Review exact issues</h3>
+          <p>See the source span, proposed mechanical change, confidence, provenance, and whether the issue requires judgment.</p>
+        </article>
+        <article class="step">
+          <span class="step-number">03</span>
+          <h3>Accept what is safe</h3>
+          <p>Apply supported fixes, reject suggestions, compare revisions, and export a reviewed copy without silently rewriting legal analysis.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-soft">
+    <div class="shell split">
+      <div class="split-copy">
+        <h2>Generic AI wants to rewrite. AutoCite is built to verify boundaries.</h2>
+        <p>
+          Legal citations contain facts that should not be guessed: courts, years, reporters, page numbers, parentheticals, and source relationships. AutoCite keeps deterministic validation in control of every automatic edit.
+        </p>
+        <div class="button-row" style="margin-top: 28px;">
+          <a class="button button-secondary" href="/compare/generic-ai/">Compare the approaches</a>
+          <a class="button button-secondary" href="/methodology/">Read the methodology</a>
+        </div>
+      </div>
+      <div class="principles">
+        <article class="principle">
+          <span class="principle-icon" aria-hidden="true">1</span>
+          <div><strong>Preserve the prose</strong><p>Non-citation writing is not rewritten merely to make the answer sound polished.</p></div>
+        </article>
+        <article class="principle">
+          <span class="principle-icon" aria-hidden="true">2</span>
+          <div><strong>Show the evidence</strong><p>Issues carry exact spans, rule families, correction levels, and disclosed provenance.</p></div>
+        </article>
+        <article class="principle">
+          <span class="principle-icon" aria-hidden="true">3</span>
+          <div><strong>Refuse missing facts</strong><p>AutoCite does not invent a reporter, court, year, page, source title, or legal treatment.</p></div>
+        </article>
+        <article class="principle">
+          <span class="principle-icon" aria-hidden="true">4</span>
+          <div><strong>Keep judgment human</strong><p>Good-law status, proposition support, authority weight, and source context remain legal-review questions.</p></div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="shell">
+      <div class="section-heading">
+        <h2>Built for the people who live in footnotes and filing deadlines.</h2>
+        <p>Each workflow gets the same privacy and evidence boundaries, with Bluepages or Whitepages priorities matched to the document.</p>
+      </div>
+      <div class="open-grid">
+        <article class="open-item">
+          <h3>Law students</h3>
+          <p>Catch mechanical citation problems before submitting a memo, seminar paper, or journal write-on.</p>
+          <a href="/law-students/">Explore the student workflow</a>
+        </article>
+        <article class="open-item">
+          <h3>Law-review editors</h3>
+          <p>Review long footnoted drafts with transparent short-form relationships and explicit unresolved issues.</p>
+          <a href="/law-review/">Explore the journal workflow</a>
+        </article>
+        <article class="open-item">
+          <h3>Litigators and clerks</h3>
+          <p>Use practitioner-focused Bluepages checks while preserving arguments, quotations, and record references.</p>
+          <a href="/law-firms/">Explore the legal-practice workflow</a>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-ink">
+    <div class="narrow">
+      <div class="quote-block">
+        <blockquote>“Mechanically clean” should mean exactly what was checked, not everything a confident model implies.</blockquote>
+        <p>AutoCite publishes its coverage and limitations so a reviewer can distinguish a mechanical correction from a legal conclusion.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="narrow">
+      <div class="section-heading">
+        <h2>Questions before you trust it with a document.</h2>
+        <p>AutoCite is designed to make the hard questions visible rather than burying them in a confidence score.</p>
+      </div>
+      <FaqList items={faq} />
+      <p style="margin-top: 28px;"><a href="/faq/">Read the complete FAQ</a></p>
+    </div>
+  </section>
+
+  <section class="section-tight">
+    <div class="shell">
+      <DownloadCta />
+    </div>
+  </section>
+</SiteLayout>
