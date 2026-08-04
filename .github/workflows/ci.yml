@@ -4,63 +4,78 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_VERSION: "0.12.1"
+
 jobs:
   test:
-    runs-on: ubuntu-latest
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v6
         with:
+          version: ${{ env.UV_VERSION }}
           python-version: ${{ matrix.python-version }}
-      - name: Synchronize development environment
-        shell: bash
-        run: |
-          set -o pipefail
-          uv sync --extra dev 2>&1 | tee ci-sync.log
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Verify lockfile and synchronize environment
+        run: uv sync --frozen --extra dev
       - name: Lint
-        shell: bash
-        run: |
-          set -o pipefail
-          uv run ruff check src tests training scripts 2>&1 | tee ci-ruff.log
+        if: matrix.python-version == '3.12'
+        run: uv run ruff check src tests training scripts
       - name: Test
-        shell: bash
-        run: |
-          set -o pipefail
-          uv run pytest --junitxml=pytest-results.xml 2>&1 | tee ci-pytest.log
+        run: uv run pytest --junitxml=pytest-results.xml
       - name: Compile
-        shell: bash
-        run: |
-          set -o pipefail
-          uv run python -m compileall -q src/autocite_mcp training scripts 2>&1 | tee ci-compile.log
+        run: uv run python -m compileall -q src/autocite_mcp training scripts
+      - name: Upload test diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-diagnostics-${{ matrix.python-version }}
+          path: pytest-results.xml
+          if-no-files-found: warn
+          retention-days: 7
+
+  quality:
+    name: Package and corpus quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Synchronize environment
+        run: uv sync --frozen --extra dev
       - name: Evaluate deterministic corpus
-        shell: bash
-        run: |
-          set -o pipefail
-          uv run autocite eval --file evals/gold.jsonl 2>&1 | tee ci-eval.log
+        run: uv run autocite eval --file evals/gold.jsonl
       - name: Validate training data pipeline
-        shell: bash
         run: |
-          set -o pipefail
-          uv run python training/build_dataset.py --output /tmp/autocite-slm.jsonl 2>&1 | tee ci-dataset.log
-          uv run python training/evaluate_slm.py --safety-file evals/slm_safety.jsonl 2>&1 | tee ci-safety.log
+          uv run python training/build_dataset.py --output /tmp/autocite-slm.jsonl
+          uv run python training/evaluate_slm.py --safety-file evals/slm_safety.jsonl
       - name: Build distributions
-        shell: bash
-        run: |
-          set -o pipefail
-          uv build 2>&1 | tee ci-build.log
+        run: uv build
       - name: Verify distribution boundaries
-        shell: bash
         run: |
-          set -o pipefail
-          uv run python - <<'PY' 2>&1 | tee ci-distribution-boundaries.log
+          uv run python - <<'PY'
           import zipfile
           from pathlib import Path
 
@@ -72,12 +87,11 @@ jobs:
           assert not any("The_Bluebook" in name for name in names)
           print(f"verified {wheel}")
           PY
-      - name: Upload CI diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
+      - name: Upload distributions
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v7
         with:
-          name: ci-diagnostics-${{ matrix.python-version }}
-          path: |
-            ci-*.log
-            pytest-results.xml
-          if-no-files-found: warn
+          name: python-distributions
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
