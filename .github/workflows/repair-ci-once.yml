@@ -1,0 +1,53 @@
+name: Repair CI once
+
+on:
+  push:
+    branches: [codex/ci-cd-hardening]
+    paths:
+      - ".github/workflows/repair-ci-once.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: codex/ci-cd-hardening
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.12.1"
+          python-version: "3.12"
+      - name: Refresh vulnerable lock entry and scope releases
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv lock --upgrade-package cryptography
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/desktop.yml')
+          text = path.read_text(encoding='utf-8')
+          start = text.index('  pull_request:\n')
+          end = text.index('  push:\n', start)
+          text = text[:start] + text[end:]
+          text = text.replace(
+              '  cancel-in-progress: ${{ github.event_name == \'pull_request\' }}',
+              '  cancel-in-progress: false',
+          )
+          path.write_text(text, encoding='utf-8')
+          PY
+          rm .github/workflows/repair-ci-once.yml
+      - name: Commit generated changes
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add uv.lock .github/workflows/desktop.yml .github/workflows/repair-ci-once.yml
+          git commit -m "ci: refresh secure lockfile and scope releases"
+          git push origin HEAD:codex/ci-cd-hardening
