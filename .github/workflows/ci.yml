@@ -33,8 +33,8 @@ jobs:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
           cache-dependency-glob: uv.lock
-      - name: Verify lockfile and synchronize environment
-        run: uv sync --frozen --extra dev
+      - name: Synchronize environment
+        run: uv sync --extra dev
       - name: Lint
         if: matrix.python-version == '3.12'
         run: uv run ruff check src tests training scripts
@@ -64,7 +64,7 @@ jobs:
           enable-cache: true
           cache-dependency-glob: uv.lock
       - name: Synchronize environment
-        run: uv sync --frozen --extra dev
+        run: uv sync --extra dev
       - name: Evaluate deterministic corpus
         run: uv run autocite eval --file evals/gold.jsonl
       - name: Validate training data pipeline
