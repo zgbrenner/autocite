@@ -58,8 +58,23 @@ jobs:
 
       - name: Decode the one-shot patch program
         run: |
-          base64 --decode scripts/codex_improve_autocite.py.gz.b64 \
-            | gzip --decompress > scripts/codex_improve_autocite.py
+          python - <<'PY'
+          from pathlib import Path
+          import base64
+          import gzip
+          import hashlib
+
+          source = Path('scripts/codex_improve_autocite.py.gz.b64')
+          raw = source.read_bytes()
+          compact = b''.join(raw.split())
+          print(f'payload_bytes={len(raw)} compact_bytes={len(compact)} sha256={hashlib.sha256(raw).hexdigest()}')
+          compressed = base64.b64decode(compact, validate=True)
+          print(f'gzip_bytes={len(compressed)} sha256={hashlib.sha256(compressed).hexdigest()}')
+          decoded = gzip.decompress(compressed)
+          target = Path('scripts/codex_improve_autocite.py')
+          target.write_bytes(decoded)
+          print(f'python_bytes={len(decoded)} sha256={hashlib.sha256(decoded).hexdigest()}')
+          PY
           python -m py_compile scripts/codex_improve_autocite.py
 
       - name: Prepare the current locked environment
