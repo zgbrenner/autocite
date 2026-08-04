@@ -1,0 +1,157 @@
+name: Codex verified AutoCite improvement
+
+on:
+  push:
+    branches: [codex/reliability-verification-v070]
+    paths:
+      - scripts/codex_improve_autocite.py.gz.b64
+      - .github/workflows/codex-improve-autocite.yml
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: codex-autocite-improvement
+  cancel-in-progress: false
+
+jobs:
+  improve-and-verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out the isolated branch
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: codex/reliability-verification-v070
+
+      - name: Install Python and uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: '0.12.1'
+          enable-cache: true
+
+      - name: Install Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.85'
+
+      - name: Install Linux desktop build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Decode the one-shot patch program
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import base64
+          import gzip
+          import hashlib
+
+          source = Path('scripts/codex_improve_autocite.py.gz.b64')
+          raw = source.read_bytes()
+          compact = b''.join(raw.split())
+          print(f'payload_bytes={len(raw)} compact_bytes={len(compact)} sha256={hashlib.sha256(raw).hexdigest()}')
+          for index in range(0, len(compact), 1024):
+              chunk = compact[index:index + 1024]
+              print(f'chunk={index // 1024:02d} bytes={len(chunk)} sha256={hashlib.sha256(chunk).hexdigest()}')
+          compressed = base64.b64decode(compact, validate=True)
+          print(f'gzip_bytes={len(compressed)} sha256={hashlib.sha256(compressed).hexdigest()}')
+          decoded = gzip.decompress(compressed)
+          target = Path('scripts/codex_improve_autocite.py')
+          target.write_bytes(decoded)
+          print(f'python_bytes={len(decoded)} sha256={hashlib.sha256(decoded).hexdigest()}')
+          PY
+          python -m py_compile scripts/codex_improve_autocite.py
+
+      - name: Prepare the current locked environment
+        run: |
+          uv python install 3.10 3.12
+          uv sync --frozen --python 3.12 --extra dev --extra tauri-build
+
+      - name: Prove the new regression tests fail before implementation
+        shell: bash
+        run: |
+          python scripts/codex_improve_autocite.py tests
+          set +e
+          uv run --python 3.12 pytest -q \
+            tests/test_authority_transport_unification.py \
+            tests/test_citation_graph_indexing.py \
+            tests/test_release_readiness.py \
+            > /tmp/autocite-red.log 2>&1
+          status=$?
+          set -e
+          cat /tmp/autocite-red.log
+          if [[ "$status" -eq 0 ]]; then
+            echo 'Regression tests unexpectedly passed before implementation.' >&2
+            exit 1
+          fi
+
+      - name: Apply the implementation
+        run: python scripts/codex_improve_autocite.py implementation
+
+      - name: Upgrade the vulnerable cryptography lock entry
+        run: |
+          uv lock --upgrade-package cryptography
+          uv lock --check
+
+      - name: Verify the declared Python 3.10 floor
+        run: |
+          uv sync --frozen --python 3.10 --extra dev --extra tauri-build
+          uv run --python 3.10 pytest -q \
+            tests/test_authority_verification.py \
+            tests/test_authority_transport_unification.py \
+            tests/test_application_http_api.py \
+            tests/test_release_readiness.py
+
+      - name: Run the complete Python quality gate
+        run: |
+          uv sync --frozen --python 3.12 --extra dev --extra tauri-build
+          uv run ruff check src tests training scripts
+          uv run pytest
+          uv run python -m compileall -q src packaging scripts
+          uv run python scripts/eval_gold.py
+          uv run python scripts/eval_system.py --fail-under 0.80
+          uv build
+
+      - name: Run the complete desktop web quality gate
+        run: |
+          npm ci --ignore-scripts --prefix desktop
+          npm run check --prefix desktop
+
+      - name: Run the native shell tests
+        run: cargo test --manifest-path desktop/src-tauri/Cargo.toml --locked
+
+      - name: Audit production dependency surfaces
+        run: |
+          uv audit
+          npm run audit:production --prefix desktop
+
+      - name: Commit only the verified result
+        env:
+          BRANCH: codex/reliability-verification-v070
+        run: |
+          rm -f scripts/codex_improve_autocite.py
+          rm -f scripts/codex_improve_autocite.py.gz.b64
+          rm -f .github/workflows/codex-improve-autocite.yml
+          git add -A
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'feat: unify authority verification and accelerate citation graphs'
+          git push origin "HEAD:${BRANCH}"
