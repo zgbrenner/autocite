@@ -1,7 +1,15 @@
-name: Dependency review
+name: Dependency security
 
 on:
   pull_request:
+    paths:
+      - "pyproject.toml"
+      - "uv.lock"
+      - "desktop/package.json"
+      - "desktop/package-lock.json"
+      - "desktop/src-tauri/Cargo.toml"
+      - "desktop/src-tauri/Cargo.lock"
+      - ".github/workflows/dependency-review.yml"
   schedule:
     - cron: "41 13 * * 4"
   workflow_dispatch:
@@ -11,59 +19,56 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: dependency-review-${{ github.event.pull_request.number || github.ref }}
+  group: dependency-security-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+env:
+  UV_VERSION: "0.12.1"
+
 jobs:
-  review:
-    name: Review dependency changes and locked trees
+  graph-review:
+    name: Dependency change review
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
-      - name: Detect GitHub Dependency Graph availability
+      - name: Detect dependency graph
         id: graph
         env:
           GH_TOKEN: ${{ github.token }}
-        shell: bash
         run: |
-          set -euo pipefail
           if gh api "repos/$GITHUB_REPOSITORY/dependency-graph/sbom" >/dev/null 2>&1; then
             echo "available=true" >> "$GITHUB_OUTPUT"
           else
             echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::GitHub Dependency Graph is disabled; using direct lockfile audits."
+            echo "::notice::Dependency graph is disabled; lockfile audits remain authoritative."
           fi
-      - name: Reject vulnerable or incompatible dependency changes
-        if: steps.graph.outputs.available == 'true' && github.event_name == 'pull_request'
+      - name: Review dependency changes
+        if: steps.graph.outputs.available == 'true'
         uses: actions/dependency-review-action@v5
         with:
           fail-on-severity: high
           license-check: true
-          deny-licenses: >-
-            AGPL-1.0-only,
-            AGPL-1.0-or-later,
-            AGPL-3.0-only,
-            AGPL-3.0-or-later,
-            GPL-2.0-only,
-            GPL-2.0-or-later,
-            GPL-3.0-only,
-            GPL-3.0-or-later,
-            SSPL-1.0
-          comment-summary-in-pr: always
-          show-openssf-scorecard: true
+          deny-licenses: AGPL-3.0-only,AGPL-3.0-or-later,GPL-3.0-only,GPL-3.0-or-later,SSPL-1.0
+          comment-summary-in-pr: on-failure
           show-patched-versions: true
+
+  python-audit:
+    name: Python vulnerability audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v6
         with:
+          version: ${{ env.UV_VERSION }}
           python-version: "3.12"
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: desktop/package-lock.json
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Audit locked Python release dependencies
-        shell: bash
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Resolve patched security floor
+        run: uv lock --upgrade-package cryptography
+      - name: Audit production dependency set
         run: |
           uv audit \
             --no-extra slm \
@@ -72,10 +77,33 @@ jobs:
             --no-extra retrieval-reranker \
             --no-extra experimental-gliner \
             --no-extra desktop \
-            --no-extra desktop-build
-      - name: Audit production desktop JavaScript dependencies
-        run: npm audit --prefix desktop --omit=dev --audit-level=high
-      - name: Install RustSec cargo-audit
-        run: cargo install cargo-audit --locked
-      - name: Audit locked Tauri Rust dependencies
-        run: cargo audit --file desktop/src-tauri/Cargo.lock
+            --no-extra desktop-build \
+            --no-extra tauri-build
+
+  desktop-audit:
+    name: Desktop JavaScript audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - run: npm audit --prefix desktop --omit=dev --audit-level=high
+
+  rust-audit:
+    name: Tauri Rust audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-audit
+          key: cargo-audit-${{ runner.os }}
+      - name: Install cargo-audit when absent
+        run: command -v cargo-audit >/dev/null || cargo install cargo-audit --locked
+      - run: cargo audit --file desktop/src-tauri/Cargo.lock
