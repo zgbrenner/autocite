@@ -33,7 +33,7 @@ jobs:
           - language: rust
             build-mode: none
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Install Rust toolchain for source analysis
         if: matrix.language == 'rust'
         uses: dtolnay/rust-toolchain@stable
