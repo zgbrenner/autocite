@@ -1,13 +1,23 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from datetime import UTC, datetime
-from enum import StrEnum
+from datetime import datetime, timezone
+from enum import Enum
 from typing import Any
+
+try:
+    from enum import StrEnum
+except ImportError:  # pragma: no cover - exercised by the Python 3.10 CI job
+
+    class StrEnum(str, Enum):
+        """Compatibility implementation for Python 3.10."""
+
+        def __str__(self) -> str:
+            return str.__str__(self)
 
 
 def utc_now_iso() -> str:
-    return datetime.now(UTC).isoformat()
+    return datetime.now(timezone.utc).isoformat()
 
 
 class SessionStatus(StrEnum):

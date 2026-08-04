@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 from docx import Document
+from docx.parts.hdrftr import HeaderPart
 
 from autocite_mcp.desktop_preservation import (
     PreservationDesktopReviewController,
@@ -160,7 +161,14 @@ async def test_non_docx_desktop_export_remains_a_labeled_fallback(tmp_path: Path
     assert metadata["preservation_mode"] == "reconstructed_text"
 
 
-async def test_preservation_self_test_exercises_original_docx_export():
+async def test_preservation_self_test_exercises_existing_header_without_template(
+    monkeypatch,
+):
+    def refuse_header_synthesis(*_args, **_kwargs):
+        raise AssertionError("self-test must not synthesize a header from package templates")
+
+    monkeypatch.setattr(HeaderPart, "new", refuse_header_synthesis)
+
     result = await run_preservation_self_test()
 
     assert result["status"] == "ok"

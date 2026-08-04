@@ -1,0 +1,278 @@
+name: Desktop CI
+
+on:
+  pull_request:
+    paths:
+      - "desktop/**"
+      - "src/autocite_mcp/application_*.py"
+      - "src/autocite_mcp/desktop_sidecar.py"
+      - "src/autocite_mcp/pdf_export.py"
+      - "tests/test_application_*.py"
+      - "tests/test_desktop_*.py"
+      - "tests/test_pdf_export.py"
+      - ".github/workflows/desktop-ci.yml"
+      - ".github/workflows/desktop.yml"
+  push:
+    branches: [main]
+    paths:
+      - "desktop/**"
+      - "src/autocite_mcp/application_*.py"
+      - "src/autocite_mcp/desktop_sidecar.py"
+      - "src/autocite_mcp/pdf_export.py"
+      - "tests/test_application_*.py"
+      - "tests/test_desktop_*.py"
+      - "tests/test_pdf_export.py"
+      - ".github/workflows/desktop-ci.yml"
+      - ".github/workflows/desktop.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: "true"
+  NODE_OPTIONS: "--max-old-space-size=4096"
+
+jobs:
+  frontend:
+    name: Frontend quality (Node ${{ matrix.node }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - name: Install exact desktop dependencies
+        run: npm ci --ignore-scripts --no-fund --no-audit
+      - name: Lint TypeScript and React
+        run: npm run lint
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Run unit tests with deterministic-core coverage
+        run: npm run test:coverage
+      - name: Build production frontend
+        run: npm run build
+      - name: Audit production dependencies
+        if: matrix.node == 24
+        run: npm audit --omit=dev --audit-level=high
+      - name: Upload frontend diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-frontend-node-${{ matrix.node }}
+          path: |
+            desktop/coverage
+            desktop/dist
+            desktop/test-results
+          if-no-files-found: warn
+          retention-days: 14
+
+  browser-e2e:
+    name: Browser workflow and accessibility smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - name: Install exact desktop dependencies
+        run: npm ci --ignore-scripts --no-fund --no-audit
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Run end-to-end workspace tests
+        run: npm run test:e2e
+      - name: Upload Playwright report and screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-playwright
+          path: |
+            desktop/playwright-report
+            desktop/test-results
+          if-no-files-found: warn
+          retention-days: 14
+
+  rust:
+    name: Tauri Rust safety and lifecycle
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install current Linux Tauri prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            file \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev \
+            patchelf \
+            wget
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Install exact desktop dependencies
+        run: npm ci --ignore-scripts --no-fund --no-audit
+      - name: Build frontend and generate platform icons
+        run: npm run build
+      - name: Add a nonfunctional CI sidecar placeholder
+        run: |
+          mkdir -p src-tauri/binaries
+          printf '#!/bin/sh\nexit 0\n' > src-tauri/binaries/autocite-backend-x86_64-unknown-linux-gnu
+          chmod +x src-tauri/binaries/autocite-backend-x86_64-unknown-linux-gnu
+      - name: Check Rust formatting
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+      - name: Run Clippy with warnings denied
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets --all-features -- -D warnings
+      - name: Run Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked --all-features
+      - name: Upload Cargo lockfile and generated icons
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-rust-lock-and-icons
+          path: |
+            desktop/src-tauri/Cargo.lock
+            desktop/src-tauri/icons/32x32.png
+            desktop/src-tauri/icons/128x128.png
+            desktop/src-tauri/icons/128x128@2x.png
+            desktop/src-tauri/icons/icon.ico
+            desktop/src-tauri/icons/icon.icns
+          if-no-files-found: warn
+          retention-days: 14
+
+  sidecar-integration:
+    name: Authenticated local sidecar integration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - name: Synchronize locked Python environment
+        run: uv sync --frozen --extra dev
+      - name: Exercise the authenticated application API
+        env:
+          AUTOCITE_API_TOKEN: desktop-ci-token
+          AUTOCITE_HOST: 127.0.0.1
+          AUTOCITE_PORT: "8877"
+          AUTOCITE_SESSION_DB: ${{ runner.temp }}/autocite-desktop-ci.sqlite3
+        run: |
+          set -euo pipefail
+          uv run autocite-desktop-sidecar > sidecar.log 2>&1 &
+          sidecar_pid=$!
+          trap 'kill "$sidecar_pid" 2>/dev/null || true' EXIT
+
+          for attempt in $(seq 1 60); do
+            if curl -fsS \
+              -H "Authorization: Bearer $AUTOCITE_API_TOKEN" \
+              http://127.0.0.1:8877/app/health > app-health.json; then
+              break
+            fi
+            sleep 0.25
+          done
+          test "$(curl -sS -o unauthorized.json -w '%{http_code}' http://127.0.0.1:8877/app/documents)" = "401"
+
+          curl -fsS \
+            -H "Authorization: Bearer $AUTOCITE_API_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"title":"CI Brief","text":"See 42 USC § 1983.","source_format":"markdown","mode":"bluepages"}' \
+            http://127.0.0.1:8877/app/documents > created.json
+          session_id="$(python -c 'import json; print(json.load(open("created.json"))["document"]["session_id"])')"
+
+          curl -fsS \
+            -H "Authorization: Bearer $AUTOCITE_API_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{}' \
+            "http://127.0.0.1:8877/app/documents/$session_id/review" > reviewed.json
+          curl -fsS \
+            -H "Authorization: Bearer $AUTOCITE_API_TOKEN" \
+            "http://127.0.0.1:8877/app/documents/$session_id/review" > review-items.json
+          curl -fsS \
+            -H "Authorization: Bearer $AUTOCITE_API_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"format":"pdf","tracked":true}' \
+            "http://127.0.0.1:8877/app/documents/$session_id/export" > exported.json
+
+          python - <<'PY'
+          import base64
+          import json
+
+          health = json.load(open("app-health.json", encoding="utf-8"))
+          created = json.load(open("created.json", encoding="utf-8"))
+          reviewed = json.load(open("reviewed.json", encoding="utf-8"))
+          items = json.load(open("review-items.json", encoding="utf-8"))
+          exported = json.load(open("exported.json", encoding="utf-8"))
+          assert health["status"] == "ok"
+          assert created["document"]["revision"] == 1
+          assert reviewed["job"]["status"] == "completed"
+          assert items["total"] >= 1
+          assert base64.b64decode(exported["data_base64"]).startswith(b"%PDF-1.4")
+          print("authenticated sidecar workflow verified")
+          PY
+      - name: Upload sidecar integration diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-sidecar-integration
+          path: |
+            sidecar.log
+            app-health.json
+            unauthorized.json
+            created.json
+            reviewed.json
+            review-items.json
+            exported.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  desktop-gate:
+    name: Desktop quality gate
+    if: always()
+    needs: [frontend, browser-e2e, rust, sidecar-integration]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require every desktop check
+        env:
+          FRONTEND: ${{ needs.frontend.result }}
+          E2E: ${{ needs.browser-e2e.result }}
+          RUST: ${{ needs.rust.result }}
+          SIDECAR: ${{ needs.sidecar-integration.result }}
+        run: |
+          test "$FRONTEND" = success
+          test "$E2E" = success
+          test "$RUST" = success
+          test "$SIDECAR" = success

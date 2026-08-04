@@ -259,16 +259,12 @@ async def run_preservation_self_test() -> dict[str, Any]:
 
     from docx import Document
 
+    from .preservation_fixture import create_preservation_fixture
+
     with tempfile.TemporaryDirectory(prefix="autocite-preservation-self-test-") as directory:
         root = Path(directory)
         source = root / "preservation-self-test.docx"
-        document = Document()
-        document.sections[0].header.paragraphs[0].text = "AutoCite Self-Test"
-        document.add_paragraph("See 42 USC §1983.")
-        table = document.add_table(rows=1, cols=2)
-        table.cell(0, 0).text = "Structure"
-        table.cell(0, 1).text = "Preserved"
-        document.save(source)
+        create_preservation_fixture(source)
         original_hash = hashlib.sha256(source.read_bytes()).hexdigest()
 
         controller = PreservationDesktopReviewController()
