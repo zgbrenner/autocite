@@ -1,0 +1,54 @@
+name: Reconcile PR 22
+
+on:
+  push:
+    branches:
+      - codex/phase-2-tauri-word-processor
+    paths:
+      - .github/workflows/reconcile-pr22.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  reconcile:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: codex/phase-2-tauri-word-processor
+      - name: Merge current main and resolve confirmed generated/config conflicts
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          set +e
+          git merge --no-commit --no-ff origin/main
+          merge_status=$?
+          set -e
+          if [ "$merge_status" -ne 0 ]; then
+            conflicts="$(git diff --name-only --diff-filter=U)"
+            printf 'Conflicts detected:\n%s\n' "$conflicts"
+            unexpected="$(printf '%s\n' "$conflicts" | grep -Ev '^(\.github/dependabot\.yml|uv\.lock)$' || true)"
+            if [ -n "$unexpected" ]; then
+              echo "Unexpected conflicts require manual review:"
+              printf '%s\n' "$unexpected"
+              exit 1
+            fi
+            git checkout --theirs .github/dependabot.yml uv.lock
+            git add .github/dependabot.yml uv.lock
+          fi
+          if git diff --name-only --diff-filter=U | grep -q .; then
+            echo "Unresolved conflicts remain"
+            git diff --name-only --diff-filter=U
+            exit 1
+          fi
+          rm .github/workflows/reconcile-pr22.yml
+          git add -A
+          git commit -m "merge: reconcile PR 22 with current main"
+          git push origin HEAD:codex/phase-2-tauri-word-processor
