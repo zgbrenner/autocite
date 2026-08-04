@@ -33,7 +33,7 @@ jobs:
           test -n "$CLOUDFLARE_API_TOKEN" || { echo "Missing CLOUDFLARE_API_TOKEN" >&2; exit 1; }
           test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "Missing CLOUDFLARE_ACCOUNT_ID" >&2; exit 1; }
           [[ "$PUBLIC_SITE_URL" =~ ^https://.+/$ ]] || { echo "site_url must be an HTTPS URL ending in /" >&2; exit 1; }
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
