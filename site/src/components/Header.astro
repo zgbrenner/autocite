@@ -1,0 +1,30 @@
+---
+import { SITE } from "../config";
+---
+
+<header class="site-header">
+  <div class="shell header-inner">
+    <a class="brand" href="/" aria-label="AutoCite home">
+      <span class="brand-mark" aria-hidden="true">A</span>
+      <span>AutoCite</span>
+    </a>
+
+    <nav class="desktop-nav" aria-label="Primary navigation">
+      {SITE.navigation.map((item) => (
+        <a href={item.href}>{item.label}</a>
+      ))}
+    </nav>
+
+    <a class="button button-small desktop-download" href={SITE.releaseUrl}>Download free</a>
+
+    <details class="mobile-menu">
+      <summary aria-label="Open navigation">Menu</summary>
+      <nav aria-label="Mobile navigation">
+        {SITE.navigation.map((item) => (
+          <a href={item.href}>{item.label}</a>
+        ))}
+        <a class="button" href={SITE.releaseUrl}>Download free</a>
+      </nav>
+    </details>
+  </div>
+</header>

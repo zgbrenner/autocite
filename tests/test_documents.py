@@ -33,6 +33,26 @@ def test_loads_docx():
     assert "576 U.S. 644" in loaded.text
 
 
+def test_correct_mime_type_wins_over_a_mismatched_filename_extension():
+    # A correctly-labeled MIME type must be authoritative over the filename
+    # extension. Previously the dispatch matched on `mime in {...} or
+    # suffix in {...}`, so a matching suffix alone routed to that branch
+    # regardless of what the (correct) MIME type said -- a real DOCX
+    # labeled with its real MIME type but saved as "brief.txt" crashed with
+    # invalid_text_encoding instead of being parsed as DOCX.
+    document = Document()
+    document.add_paragraph("Obergefell v. Hodges, 576 U.S. 644 (2015)")
+    stream = io.BytesIO()
+    document.save(stream)
+    loaded = load_document_bytes(
+        stream.getvalue(),
+        "brief.txt",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+    assert loaded.source_format == "docx"
+    assert "576 U.S. 644" in loaded.text
+
+
 def test_scanned_pdf_requires_ocr():
     minimal_pdf = b"%PDF-1.4\n%%EOF"
     with pytest.raises(DocumentLoadError) as exc:

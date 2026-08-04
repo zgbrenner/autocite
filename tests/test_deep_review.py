@@ -113,6 +113,54 @@ async def test_deep_reviewer_falls_back_to_lexical_when_hybrid_backend_is_broken
     assert evidence["proposition"]["candidate_passages"][0]["fallback_reason"]
 
 
+class _UnmatchedSourceClient:
+    """Mimics CourtListenerSourceClient._unmatched_record: the citation text is
+    echoed back even though no cluster was found, so _match_authority's
+    substring check can still "match" a citation to a record with no real
+    retrieved text."""
+
+    async def lookup_and_fetch(self, text):
+        return {
+            "available": True,
+            "provider": "CourtListener",
+            "authorities": [
+                {
+                    "citation": "999 F.3d 111",
+                    "normalized_citations": ["999 F.3d 111"],
+                    "status": 404,
+                    "ambiguous": False,
+                    "case_name": "",
+                    "source_url": "",
+                    "analysis_text": "",
+                    "source_text": "",
+                    "error_message": "Citation was not matched to a CourtListener authority.",
+                    "later_citation_metadata": {"citation_count": None, "classification": "not_a_citator"},
+                }
+            ],
+        }
+
+
+@pytest.mark.asyncio
+async def test_deep_reviewer_does_not_report_evidence_prepared_for_unmatched_authority():
+    text = "See 999 F.3d 111 (9th Cir. 2020)."
+    citations = [
+        {
+            "source_type": "case",
+            "text": "999 F.3d 111 (9th Cir. 2020)",
+            "start": text.index("999"),
+            "end": len(text) - 1,
+            "components": {},
+        }
+    ]
+    result = await DeepReviewer(source_client=_UnmatchedSourceClient()).review(text, citations)
+    case = result["cases"][0]
+    # The citation text-matches the echoed "not found" stub's citation field,
+    # so authority resolution succeeds, but no real source text was ever
+    # retrieved -- the status must not claim evidence was prepared.
+    assert case["status"] != "evidence_prepared"
+    assert case["evidence"]["quotation"]["status"] == "not_supplied"
+
+
 @pytest.mark.asyncio
 async def test_primary_workflow_does_not_call_network_by_default(monkeypatch):
     async def forbidden(*args, **kwargs):

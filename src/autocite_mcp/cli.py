@@ -35,8 +35,12 @@ def _read_text(value: str | None, file_path: str | None) -> str:
 
 
 def _emit(payload: Any) -> None:
-    json.dump(payload, sys.stdout, indent=2, ensure_ascii=False)
-    sys.stdout.write("\n")
+    # sys.stdout's text-mode encoding follows the platform locale (e.g. cp1252
+    # on Windows), which cannot represent citation symbols like `§`/`¶` or
+    # accented names and silently mangles them. Write UTF-8 bytes directly so
+    # CLI output is correct regardless of platform or console codepage.
+    sys.stdout.buffer.write(json.dumps(payload, indent=2, ensure_ascii=False).encode("utf-8"))
+    sys.stdout.buffer.write(b"\n")
 
 
 def _add_review_options(command: argparse.ArgumentParser) -> None:

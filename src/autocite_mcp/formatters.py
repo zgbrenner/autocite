@@ -242,11 +242,20 @@ _FORMATTERS: dict[str, Callable[[Mapping[str, Any], str, str], str]] = {
     "constitution": _constitution,
     "journal_article": _journal,
     "book": _book,
-    "website": _website,
+    "internet": _website,
     "court_document": _court_document,
     "ai_content": _ai_content,
     "archival": _archival,
 }
+
+# knowledge.py's SOURCE_GUIDANCE (and Bluebook Rule 18/"internet sources"
+# terminology used throughout the rest of the codebase) treats "internet"
+# as canonical and "website" as an alias -- generate_citation previously
+# used the opposite convention with no alias at all, so a caller who took
+# "internet" from get_citation_guidance/knowledge.py output and fed it
+# straight back into generate_citation got "Unsupported source_type:
+# internet" even though it's a fully supported type under its other name.
+_SOURCE_TYPE_ALIASES = {"website": "internet"}
 
 
 def generate_citation(
@@ -257,9 +266,12 @@ def generate_citation(
     output_style: str = "plain",
 ) -> str:
     """Generate a citation only from supplied facts; never infer missing metadata."""
+    if not isinstance(fields, Mapping):
+        raise ValueError("fields must be a mapping of field name to value")
     normalized_mode = validate_mode(mode)
     normalized_style = validate_output_style(output_style)
-    normalized_type = source_type.strip().lower()
+    normalized_type = (source_type or "").strip().lower()
+    normalized_type = _SOURCE_TYPE_ALIASES.get(normalized_type, normalized_type)
     formatter = _FORMATTERS.get(normalized_type)
     if formatter is None:
         raise ValueError(f"Unsupported source_type: {source_type}")

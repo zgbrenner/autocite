@@ -1,13 +1,21 @@
+import asyncio
+
 import pytest
 
 from autocite_mcp.slm_runtime import CallableSLMRuntime
 
 from autocite_mcp.tools import (
+    _CPU_BOUND_EXECUTOR,
     check_citations,
     check_single_citation,
     convert_citation,
     explain_issue,
+    get_citation_graph,
+    get_citation_guidance,
+    get_rule_context,
     list_capabilities,
+    review_document,
+    run_cpu_bound,
 )
 
 
@@ -39,9 +47,148 @@ def test_convert_state_statute_without_fabricating_title():
     assert result["converted"] == "Mass. Gen. Laws ch. 1, § 2 (West 1999)"
 
 
+def test_convert_citation_never_leaks_internal_resolved_to_bookkeeping():
+    # "resolved_to" is internal short-form-resolution bookkeeping (which
+    # citation_graph authority a citation resolved to), not a citation fact.
+    # Only the case branch used to strip it before returning facts_used;
+    # every other source_type leaked it.
+    for citation, mode in (
+        ("42 U.S.C. § 1983 (2018)", "whitepages"),
+        ("40 C.F.R. § 260.10 (2024)", "whitepages"),
+        ("U.S. Const. amend. IV", "whitepages"),
+    ):
+        result = convert_citation(citation, target_mode=mode)
+        assert "resolved_to" not in result["facts_used"], citation
+
+
 def test_explain_issue_returns_mode_specific_rule():
     result = explain_issue("REPORTER_ABBREVIATION", mode="whitepages")
     assert result["rule"] == "Rule 10"
+
+
+def test_explain_issue_covers_every_rule_findings_code():
+    # rule_findings (review_document's contextual-rule output) is populated
+    # exclusively from deterministic_rules.RULE_SPECS, a disjoint code
+    # namespace from rules.RULE_CATALOG (the codes explain_issue previously
+    # only recognized) -- a caller who saw one of these codes in
+    # rule_findings and called explain_issue to learn more always got
+    # "Unknown issue code". Every RULE_SPECS code must resolve.
+    from autocite_mcp.deterministic_rules import RULE_SPECS
+
+    for code in RULE_SPECS:
+        result = explain_issue(code)
+        assert result["code"] == code
+        assert result["description"]
+        assert result["rule"]
+
+
+def test_explain_issue_rejects_unknown_code():
+    with pytest.raises(ValueError, match="Unknown issue code"):
+        explain_issue("NOT_A_REAL_CODE")
+
+
+@pytest.mark.asyncio
+async def test_review_document_rejects_none_text_with_valueerror_not_attributeerror():
+    # A None text/citation/query argument previously crashed with an
+    # unhandled AttributeError from `.strip()` deep inside each function,
+    # rather than the same clean ValueError empty-string input already
+    # gets. Only reachable via direct Python API use (the MCP tool-call
+    # JSON schema boundary already rejects null), but local_product.py
+    # documents that as a real, supported access path.
+    with pytest.raises(ValueError, match="text must not be empty"):
+        await review_document(None)
+
+
+def test_check_citations_rejects_none_text_with_valueerror():
+    with pytest.raises(ValueError, match="text must not be empty"):
+        check_citations(None)
+
+
+def test_get_citation_graph_rejects_none_text_with_valueerror():
+    with pytest.raises(ValueError, match="text must not be empty"):
+        get_citation_graph(None)
+
+
+def test_get_rule_context_rejects_none_query_with_valueerror():
+    with pytest.raises(ValueError, match="query must not be empty"):
+        get_rule_context(None)
+
+
+def test_check_single_citation_rejects_none_citation_with_valueerror():
+    with pytest.raises(ValueError, match="citation must not be empty"):
+        check_single_citation(None)
+
+
+def test_convert_citation_rejects_none_citation_with_valueerror():
+    with pytest.raises(ValueError, match="citation must not be empty"):
+        convert_citation(None, target_mode="bluepages")
+
+
+def test_explain_issue_rejects_none_code_with_valueerror():
+    with pytest.raises(ValueError, match="Unknown issue code"):
+        explain_issue(None)
+
+
+def test_get_citation_guidance_treats_none_source_type_as_all():
+    result = get_citation_guidance(source_type=None)
+    assert result["sources"] == get_citation_guidance(source_type="all")["sources"]
+
+
+@pytest.mark.asyncio
+async def test_run_cpu_bound_caps_concurrent_thread_executions():
+    # Without a cap, enough concurrent citation-dense requests could exhaust
+    # the shared default thread pool that uploaded-document parsing,
+    # desktop reads, and SLM generation also depend on. Verify the actual
+    # number of simultaneous thread executions never exceeds the executor's
+    # worker cap.
+    import threading
+    import time
+
+    cap = _CPU_BOUND_EXECUTOR._max_workers
+    lock = threading.Lock()
+    current = 0
+    peak = 0
+
+    def slow_fn():
+        nonlocal current, peak
+        with lock:
+            current += 1
+            peak = max(peak, current)
+        time.sleep(0.05)
+        with lock:
+            current -= 1
+
+    await asyncio.gather(*[run_cpu_bound(slow_fn) for _ in range(cap * 3)])
+    assert peak <= cap
+
+
+def test_run_cpu_bound_survives_repeated_asyncio_run_calls():
+    # Regression: run_cpu_bound previously enforced its concurrency cap with
+    # a module-level asyncio.Semaphore. A semaphore only binds its internal
+    # state to the running event loop the first time it must actually wait
+    # (i.e. genuine contention, not merely being awaited) -- so a single
+    # review rarely triggered it, but the desktop app runs many concurrent
+    # citation checks *within* one review's asyncio.run() call, easily
+    # exceeding the cap and forcing a wait, which bound the semaphore to
+    # that review's event loop. asyncio.run() closes its loop when the
+    # review finishes, so the *next* review's asyncio.run() -- a fresh
+    # loop -- raised "bound to a different event loop" the moment its own
+    # concurrent load forced the semaphore to wait again. A ThreadPoolExecutor
+    # has no loop affinity, so this must keep working across as many
+    # separate asyncio.run() calls, each with contention exceeding the cap,
+    # as the desktop app makes over its lifetime.
+    def slow(x):
+        import time
+
+        time.sleep(0.01)
+        return x
+
+    async def one_review():
+        overload = _CPU_BOUND_EXECUTOR._max_workers * 3
+        return await asyncio.gather(*[run_cpu_bound(slow, i) for i in range(overload)])
+
+    for _ in range(3):
+        assert asyncio.run(one_review())
 
 
 def test_capabilities_disclose_verification_limits():

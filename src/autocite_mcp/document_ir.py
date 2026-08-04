@@ -787,14 +787,26 @@ def parse_pdf_ir(payload: bytes, *, filename: str = "document.pdf") -> DocumentI
 def locate_citations(ir: DocumentIR, engine: Any) -> tuple[CitationOccurrence, ...]:
     occurrences: list[CitationOccurrence] = []
     for index, citation in enumerate(engine.extract(ir.text)):
-        block = ir.block_at(citation.start)
+        # eyecite's case-name backward scan can absorb a block separator's
+        # leading whitespace/newlines into citation.start (e.g. a citation
+        # opening a new paragraph or footnote right after a blank-line
+        # boundary), landing citation.start in the inter-block gap rather
+        # than the block the citation is actually in. block_at looks up the
+        # block containing an exact offset, so it returns None (or the wrong,
+        # preceding block) for a position in that gap; searching forward past
+        # any leading whitespace finds the block the citation's real content
+        # is in without changing the citation's own reported start/end/text.
+        block_lookup_start = citation.start
+        while block_lookup_start < citation.end and ir.text[block_lookup_start].isspace():
+            block_lookup_start += 1
+        block = ir.block_at(block_lookup_start)
         contained = bool(block and citation.end <= block.absolute_end)
         location = CitationLocation(
             block_id=block.block_id if contained and block else None,
             block_kind=block.kind if contained and block else None,
             absolute_start=citation.start,
             absolute_end=citation.end,
-            block_local_start=citation.start - block.absolute_start if contained and block else None,
+            block_local_start=max(0, citation.start - block.absolute_start) if contained and block else None,
             block_local_end=citation.end - block.absolute_start if contained and block else None,
             note_id=block.note_id if contained and block else None,
             note_number=block.note_number if contained and block else None,
@@ -837,10 +849,33 @@ def classify_document_mode(
     elif normalized_type != "auto":
         raise ValueError("document_type must be auto or a recognized court/practitioner/academic type")
     searchable = " ".join(filter(None, [ir.metadata.title, ir.metadata.subject, ir.text[:4000]]))
-    if re.search(r"\b(?:district|supreme|superior|bankruptcy) court\b|\bplaintiff\b|\bdefendant\b|\bmotion\b", searchable, re.I):
+    # Bare "supreme court" also fires on academic prose that discusses "the
+    # Supreme Court" in the abstract, with no other filing signal to offset
+    # it. Real Supreme Court filings identify themselves as appellate
+    # captions instead (petitioner/respondent, writ of certiorari, "brief
+    # for/of ..."), which academic articles about the Court essentially
+    # never do, so match on those instead of the bare court name.
+    if re.search(
+        r"\b(?:district|superior|bankruptcy) court\b"
+        r"|\bplaintiff\b|\bdefendant\b|\bmotion\b"
+        r"|\bpetitioner\b|\brespondent\b|\bon writ of certiorari\b|\bbrief (?:for|of)\b",
+        searchable,
+        re.I,
+    ):
         blue_evidence.append("court_filing_language")
     if re.search(r"\blaw review\b|\bseminar paper\b|\bthis (?:article|note)\b|\bscholarly\b", searchable, re.I):
         white_evidence.append("academic_language")
+    # Case-sensitive "By" (not re.I): legal filings use ALL-CAPS or
+    # colon-suffixed signature-block conventions ("BY THE COURT", "BY:
+    # John Smith", "by order of the court"), none of which match a literal
+    # "By " followed by capitalized name-like words -- only a true academic
+    # byline does.
+    if re.search(
+        r"^[ \t]*By[ \t]+[A-Z][a-zA-Z'.-]*(?:[ \t]+[A-Z][a-zA-Z'.-]*){1,3}[ \t]*$",
+        ir.text[:300],
+        re.M,
+    ):
+        white_evidence.append("author_byline")
     note_count = len(ir.blocks_of_kind("footnote")) + len(ir.blocks_of_kind("endnote"))
     if note_count:
         white_evidence.append(f"numbered_notes:{note_count}")

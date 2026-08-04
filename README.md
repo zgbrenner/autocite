@@ -1,26 +1,39 @@
-# AutoCite MCP
+# AutoCite
 
-AutoCite turns Claude, ChatGPT, or a local desktop app into a safer legal-citation specialist for:
+**The private legal citation checker that leaves your writing alone.**
 
-- **Bluepages:** briefs, motions, pleadings, court filings, and practitioner memoranda.
-- **Whitepages:** law reviews, student notes, seminar papers, and academic legal research.
+AutoCite reviews supported Bluepages and Whitepages citation mechanics in briefs, motions, pleadings, memoranda, law-review drafts, student notes, and academic legal writing. Standard desktop review is **local-first**, has **no application telemetry**, preserves non-citation prose, and applies only bounded mechanical fixes automatically.
 
-AutoCite 0.6 also includes an optional local SLM layer using [`foolish-bandit/AutoCite-0.8B`](https://huggingface.co/foolish-bandit/AutoCite-0.8B), a citation-specialized LoRA adapter based on `Qwen/Qwen3.5-0.8B`. The model can classify ambiguous citation issues and propose structured repairs, but deterministic validation remains in control of every automatic edit.
+[**Download the latest release**](https://github.com/zgbrenner/autocite/releases/latest) · [**Try the private Citation Risk Scan**](https://zgbrenner-autocite.pages.dev/citation-risk-scan/) · [**Read the methodology**](https://zgbrenner-autocite.pages.dev/methodology/) · [**Review the privacy architecture**](https://zgbrenner-autocite.pages.dev/privacy/)
+
+> **Accuracy boundary:** AutoCite does not guarantee complete Bluebook compliance. It does not determine good-law status, proposition support, controlling authority, precedential weight, or whether a quotation is fair in context. It does not replace official manuals, controlling rules, licensed citators, source verification, or professional judgment.
+
+## Why AutoCite is different
+
+- **Preserves the document.** AutoCite is designed to change supported citation mechanics, not rewrite legal analysis to make the result sound polished.
+- **Validates exact spans.** A correction is rejected when the reviewed source text no longer matches its recorded location.
+- **Refuses missing facts.** It does not invent a reporter, court, year, author, title, page, pincite, date, URL, parenthetical, archive link, or legal treatment.
+- **Keeps uncertainty visible.** Ambiguous `Id.`, short-case, `supra`, `supra note`, statutory short forms, and `hereinafter` uses return candidates and review warnings instead of guessed antecedents.
+- **Works across legal-writing modes.** Bluepages supports practitioner documents; Whitepages supports law reviews, student notes, seminar papers, and academic legal research.
+- **Is open and auditable.** The source, tests, evaluation data, rule coverage, security defaults, and release packaging are public under the MIT License.
+
+AutoCite is available as a desktop application, MCP server, command-line tool, and authenticated local application API. An optional local SLM layer uses [`foolish-bandit/AutoCite-0.8B`](https://huggingface.co/foolish-bandit/AutoCite-0.8B), a citation-specialized LoRA adapter based on `Qwen/Qwen3.5-0.8B`. The model can classify ambiguous citation issues and propose structured repairs, but deterministic validation remains in control of every automatic edit.
 
 The normal workflow remains simple: provide text or a document, ask AutoCite to review the citations, and preserve everything else. AutoCite detects the appropriate mode, applies deterministic fixes, supplies citation-rule knowledge, and, when explicitly requested, retrieves case authority to compare quotations, page markers, and candidate supporting passages.
 
-## Download the portable desktop app
+## Download the desktop app
 
-The easiest option for nontechnical users is the portable desktop release.
+The easiest option for nontechnical users is the latest desktop release.
 
-1. Open the repository's **Releases** page.
-2. Download `AutoCite-windows-x64-v0.6.0.zip` for a standard Windows laptop.
-3. Extract the entire ZIP.
-4. Open the extracted `AutoCite` folder and double-click `AutoCite.exe`.
+1. Open [GitHub Releases](https://github.com/zgbrenner/autocite/releases/latest).
+2. Choose the current artifact for Windows, macOS, or Linux.
+3. Read the release notes and included start guide.
+4. Verify the matching SHA-256 checksum when one is published for the artifact.
+5. Extract portable packages completely before launching them.
 
-The portable desktop requires no installer, Python installation, administrator access, dedicated GPU, model download, or separate runtime. Standard local review is the recommended mode for computers with 8 GB of memory. It works offline, has no telemetry, and never modifies the source document.
+The portable desktop requires no Python installation, dedicated GPU, model download, or separate runtime for standard local review. The current release page is the source of truth for supported platforms, filenames, installation requirements, checksums, and manifests.
 
-The desktop accepts TXT, Markdown, DOCX, and searchable PDF files. It provides automatic Bluepages or Whitepages selection, responsive background review, original and corrected text, structured review items, confidence and provenance details, reviewed Word export, and a compact JSON audit report. Every release ZIP includes a start guide, build manifest, license, and matching SHA-256 checksum. See [`docs/DESKTOP.md`](docs/DESKTOP.md).
+The desktop accepts TXT, Markdown, DOCX, and searchable PDF files. It provides automatic Bluepages or Whitepages selection, responsive background review, original and corrected text, structured review items, confidence and provenance details, reviewed Word export, and a compact JSON audit report. See [`docs/DESKTOP.md`](docs/DESKTOP.md).
 
 ## Other installation options
 

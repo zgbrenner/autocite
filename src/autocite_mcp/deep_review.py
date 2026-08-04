@@ -62,6 +62,12 @@ class DeepReviewer:
             if authority_index in unused:
                 unused.remove(authority_index)
             authority = dict(authorities[authority_index])
+            # CourtListener's not-found/budget-exhausted stubs (built by
+            # _unmatched_record) echo the citation text back, so a citation
+            # can text-match one of these even though no cluster was ever
+            # retrieved; only _authority_record output (which never carries
+            # error_message) represents an actual matched, fetched authority.
+            authority_was_matched = "error_message" not in authority
             analysis_text = str(
                 authority.pop("analysis_text", authority.get("source_text", ""))
             )
@@ -80,7 +86,11 @@ class DeepReviewer:
                     "citation": citation,
                     "authority": authority,
                     "evidence": evidence,
-                    "status": "evidence_prepared",
+                    "status": (
+                        "evidence_prepared"
+                        if authority_was_matched
+                        else "authority_not_aligned"
+                    ),
                 }
             )
 

@@ -32,7 +32,7 @@ class CourtListenerVerifier:
                 "message": "Set COURTLISTENER_TOKEN to verify case citations.",
                 "results": [],
             }
-        if not text.strip():
+        if not (text or "").strip():
             raise ValueError("text must not be empty")
         if len(text) > 64_000:
             raise ValueError("CourtListener citation lookup accepts at most 64,000 characters")

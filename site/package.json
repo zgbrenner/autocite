@@ -1,0 +1,36 @@
+{
+  "name": "autocite-site",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "lint": "astro check",
+    "typecheck": "astro check",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "audit:seo": "node scripts/audit-seo.mjs",
+    "lighthouse:ci": "lhci autorun",
+    "verify": "npm run lint && npm test && npm run build && npm run audit:seo && npm run test:e2e && npm run lighthouse:ci"
+  },
+  "dependencies": {
+    "@astrojs/rss": "^4.0.0",
+    "@astrojs/sitemap": "^3.0.0",
+    "astro": "^5.0.0"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.0",
+    "@lhci/cli": "^0.15.0",
+    "@playwright/test": "^1.56.0",
+    "@types/node": "^22.0.0",
+    "cheerio": "^1.1.0",
+    "typescript": "^5.9.0",
+    "vitest": "^4.0.0"
+  }
+}

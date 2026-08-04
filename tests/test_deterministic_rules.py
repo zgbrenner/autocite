@@ -4,6 +4,7 @@ from autocite_mcp.citation_graph import build_citation_graph
 from autocite_mcp.deterministic_rules import (
     CORRECTION_LEVELS,
     RULE_SPECS,
+    _MAX_BIDI_FINDINGS,
     evaluate_document_rules,
     parse_parentheticals,
     parse_signals,
@@ -54,8 +55,66 @@ def test_case_and_statute_cannot_use_supra():
 
 def test_signal_punctuation_is_mechanical_but_substantive_fit_is_not_decided():
     findings = _findings("Cf Smith v. Jones, 123 F.3d 456 (9th Cir. 2020).")
-    assert any(item.issue_code == "SIGNAL_PUNCTUATION" for item in findings)
+    finding = next(item for item in findings if item.issue_code == "SIGNAL_PUNCTUATION")
     assert not any("support" in item.explanation.lower() for item in findings)
+    # Nothing in the codebase ever applies rule_findings to corrected_text
+    # (evaluate_document_rules output is informational only), so this must
+    # never claim safe_auto_fix -- see test_rule_findings_never_claim_an_unapplied_safe_auto_fix.
+    assert finding.correction_level == "suggested_fix"
+
+
+def test_rule_findings_never_claim_an_unapplied_safe_auto_fix():
+    # contextual rule findings (evaluate_document_rules) are informational
+    # only -- no code path applies them to corrected_text, so a rule spec
+    # marked safe_auto_fix would falsely claim an edit was made. See
+    # tools.py's response_contract ("Only high-confidence mechanical edits
+    # are applied automatically") and README's identical guarantee.
+    for spec in RULE_SPECS.values():
+        assert spec.correction_level != "safe_auto_fix", (
+            f"{spec.issue_code} is labeled safe_auto_fix but evaluate_document_rules "
+            "findings are never applied to corrected_text"
+        )
+
+
+def test_bidi_override_characters_are_flagged_never_silently_applied():
+    # Explicit Bidi override/embedding/pop-formatting characters (the
+    # "Trojan Source" characters) can make text visually misrepresent its
+    # own content -- e.g. digits inside a citation could display in a
+    # different order than they're actually stored. Previously these
+    # passed through into corrected_text completely unflagged; now they
+    # must be surfaced as review_required, never silently stripped or
+    # auto-applied (the tool's "never silently modify" principle), and
+    # never confused with the newer, legitimate Bidi isolate characters.
+    text = "347 U.S. ‮483‬ (1954)."
+    findings = _findings(text)
+    bidi_findings = [f for f in findings if f.issue_code == "BIDI_CONTROL_CHARACTER_PRESENT"]
+    assert len(bidi_findings) == 2
+    for finding in bidi_findings:
+        assert finding.correction_level == "review_required"
+        assert finding.suggestion is None
+
+    isolates_only = "⁦347 U.S. 483⁩ (1954)."
+    assert not any(
+        f.issue_code == "BIDI_CONTROL_CHARACTER_PRESENT" for f in _findings(isolates_only)
+    )
+
+
+def test_bidi_findings_are_capped_with_a_summary_instead_of_one_per_character():
+    # Regression: a hostile or corrupted document can carry many thousands
+    # of Bidi control characters. Emitting one RuleFinding per occurrence
+    # made this an unbounded output amplifier -- 500,000 characters in a
+    # 1.5MB input produced 500,000 findings and ~300MB of serialized JSON,
+    # remotely triggerable well under the 15MB document size limit. Findings
+    # must now be capped, with any excess rolled into a single summary
+    # finding rather than silently dropped.
+    total_occurrences = _MAX_BIDI_FINDINGS + 30
+    text = "‮" * total_occurrences
+    findings = _findings(text)
+    bidi_findings = [f for f in findings if f.issue_code == "BIDI_CONTROL_CHARACTER_PRESENT"]
+    assert len(bidi_findings) == _MAX_BIDI_FINDINGS + 1
+    summary = bidi_findings[-1]
+    assert str(total_occurrences) in summary.explanation
+    assert "30" in summary.explanation
 
 
 def test_direct_quotation_without_pincite_requires_review():

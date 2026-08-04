@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://zgbrenner-autocite.pages.dev/sitemap-index.xml

@@ -275,6 +275,34 @@ async def test_generate_certification_report_structured_content_deep_shape() -> 
     assert structured["statement"]
 
 
+async def test_check_citations_does_not_block_the_event_loop_on_a_dense_document() -> None:
+    # check_citations previously ran directly on the event loop (a plain
+    # `def` tool, called synchronously by FastMCP's dispatch), so a
+    # citation-dense document would stall every other concurrent request
+    # against a hosted server for the full duration of the call -- the same
+    # class of issue fixed for review_document via
+    # tools._run_deterministic_pipeline, but left open here. Now offloaded
+    # via asyncio.to_thread; a concurrent heartbeat task must keep ticking
+    # throughout the call.
+    import asyncio
+
+    from autocite_mcp.server import check_citations
+
+    dense_text = "Brown v. Board of Education, 347 U.S. 483 (1954). " * 500
+    ticks = 0
+
+    async def heartbeat() -> None:
+        nonlocal ticks
+        while True:
+            await asyncio.sleep(0)
+            ticks += 1
+
+    hb = asyncio.create_task(heartbeat())
+    await check_citations(dense_text)
+    hb.cancel()
+    assert ticks > 5
+
+
 def test_generate_citation_echoes_normalized_mode_and_style():
     from autocite_mcp.server import generate_citation
 

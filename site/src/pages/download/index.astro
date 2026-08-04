@@ -1,0 +1,62 @@
+---
+import SiteLayout from "../../layouts/SiteLayout.astro";
+import { SITE } from "../../config";
+import { buildBreadcrumbJsonLd } from "../../lib/seo";
+---
+
+<SiteLayout
+  title="Download AutoCite"
+  description="Download the latest verified AutoCite release for Windows, macOS, or Linux, or install the open-source MCP and command-line tools."
+  pathname="/download/"
+  jsonLd={buildBreadcrumbJsonLd([
+    { name: "AutoCite", path: "/" },
+    { name: "Download", path: "/download/" },
+  ])}
+>
+  <header class="page-hero">
+    <div class="shell page-hero-grid">
+      <div>
+        <h1>Download the latest verified AutoCite release.</h1>
+        <p>
+          GitHub Releases is the source of truth for current platforms, filenames, checksums, manifests, and release notes. Choose the artifact that matches your operating system.
+        </p>
+        <div class="button-row" style="margin-top: 30px;">
+          <a class="button button-blue" href={SITE.releaseUrl}>Open latest release</a>
+          <a class="button button-secondary" href={SITE.repositoryUrl}>View source</a>
+        </div>
+      </div>
+      <aside class="page-aside">
+        <strong>Verify before opening.</strong>
+        <p>Use the SHA-256 checksum and build manifest attached to the release when they are available for your artifact.</p>
+      </aside>
+    </div>
+  </header>
+
+  <section class="section">
+    <div class="shell">
+      <div class="section-heading"><h2>Choose your path.</h2><p>The release page may include portable apps, native bundles, and Python packages. Availability can vary by release.</p></div>
+      <div class="open-grid">
+        <article class="open-item"><h3>Windows</h3><p>Choose the Windows x64 artifact listed in the current release. Portable packages should be extracted completely before launch.</p><a href={SITE.releaseUrl}>See Windows downloads</a></article>
+        <article class="open-item"><h3>macOS</h3><p>Choose Apple Silicon for M-series Macs or Intel for older Macs. Unsigned community builds may trigger Gatekeeper warnings.</p><a href={SITE.releaseUrl}>See macOS downloads</a></article>
+        <article class="open-item"><h3>Linux</h3><p>Choose the Linux artifact provided by the current release and follow the included start guide or release notes.</p><a href={SITE.releaseUrl}>See Linux downloads</a></article>
+        <article class="open-item"><h3>Claude Desktop and MCP</h3><p>Install the Python package and configure the local MCP server for compatible assistants.</p><a href="https://github.com/zgbrenner/autocite#claude-desktop-local-and-private">Read MCP setup</a></article>
+        <article class="open-item"><h3>Command line</h3><p>Use the CLI for scripted review, evaluations, exports, and jurisdiction inspection.</p><a href="https://github.com/zgbrenner/autocite#command-line">Read CLI setup</a></article>
+        <article class="open-item"><h3>Source deployment</h3><p>Developers can inspect, build, self-host, or extend the MIT-licensed repository under the documented security defaults.</p><a href={SITE.repositoryUrl}>Open GitHub repository</a></article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-soft">
+    <div class="narrow prose">
+      <h2>Before using AutoCite on confidential work</h2>
+      <ol>
+        <li>Confirm the artifact came from the official repository release page.</li>
+        <li>Verify the checksum when one is published.</li>
+        <li>Read the release notes and known limitations.</li>
+        <li>Understand which optional features can access the network.</li>
+        <li>Follow organizational confidentiality, supervision, and software-approval requirements.</li>
+      </ol>
+      <p class="notice warning">AutoCite assists citation review. It does not replace official citation manuals, controlling local rules, source verification, a licensed citator, or professional judgment.</p>
+    </div>
+  </section>
+</SiteLayout>

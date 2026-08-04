@@ -51,3 +51,10 @@ async def test_verifier_requires_token():
     result = await CourtListenerVerifier(token=None).verify_text("576 U.S. 644")
     assert result["available"] is False
     assert result["reason"] == "missing_token"
+
+
+@pytest.mark.asyncio
+async def test_verifier_rejects_none_text_with_valueerror_not_attributeerror():
+    verifier = CourtListenerVerifier(token="secret", client_factory=lambda **_: FakeClient())
+    with pytest.raises(ValueError, match="text must not be empty"):
+        await verifier.verify_text(None)

@@ -1,6 +1,6 @@
 import pytest
 
-from autocite_mcp.formatters import generate_citation
+from autocite_mcp.formatters import generate_citation, supported_source_types
 
 
 def test_generates_practitioner_case_citation_in_markdown():
@@ -49,6 +49,24 @@ def test_missing_required_fields_are_reported_not_invented():
             },
             mode="bluepages",
         )
+
+
+def test_generate_citation_rejects_none_source_type_cleanly():
+    with pytest.raises(ValueError, match="Unsupported source_type"):
+        generate_citation(None, {"case_name": "x"})
+
+
+def test_generate_citation_rejects_non_mapping_fields_cleanly():
+    # generate_citation is a documented python_api access path (per
+    # local_product.py), not only reachable through the MCP tool-call JSON
+    # schema boundary that would otherwise reject a non-object "fields".
+    # Previously a non-dict fields argument crashed with an unhandled
+    # AttributeError from deep inside _required/_optional instead of a
+    # clean, typed error.
+    with pytest.raises(ValueError, match="mapping"):
+        generate_citation("case", "not-a-dict")
+    with pytest.raises(ValueError, match="mapping"):
+        generate_citation("case", ["not", "a", "dict"])
 
 
 def test_generates_statute_with_section_symbol_spacing():
@@ -171,6 +189,18 @@ def test_regulation_requires_year():
         {"title": "40", "code": "C.F.R.", "section": "260.10", "year": "2024"},
     )
     assert complete == "40 C.F.R. § 260.10 (2024)"
+
+
+def test_generate_citation_accepts_internet_the_same_as_website():
+    # knowledge.py's SOURCE_GUIDANCE (and Bluebook "internet sources"
+    # terminology used elsewhere) treats "internet" as canonical and
+    # "website" as an alias; generate_citation previously used the reverse
+    # convention with no alias, so a caller who took "internet" from
+    # get_citation_guidance and fed it back into generate_citation got
+    # "Unsupported source_type: internet" for a fully supported type.
+    fields = {"title": "My Title", "site": "Blog", "url": "http://x.com"}
+    assert generate_citation("internet", fields) == generate_citation("website", fields)
+    assert "internet" in supported_source_types()
 
 
 def test_website_title_takes_output_style_typeface():

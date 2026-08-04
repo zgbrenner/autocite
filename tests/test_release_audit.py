@@ -36,6 +36,6 @@ def test_cyclonedx_sbom_covers_locked_project():
 
 
 def test_release_language_does_not_claim_full_bluebook_compliance():
-    text = (ROOT / "README.md").read_text().casefold()
+    text = (ROOT / "README.md").read_text(encoding="utf-8").casefold()
     assert "does not claim complete bluebook compliance" in text
     assert "fully bluebook-compliant" not in text

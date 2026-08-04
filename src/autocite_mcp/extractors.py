@@ -55,20 +55,61 @@ def _resource_map(citations: list[Any]) -> dict[int, str]:
     return mapping
 
 
+# eyecite's full_span() greedily absorbs *any* parenthetical immediately
+# following a full citation, including a trailing "(hereinafter ...)"
+# alias definition -- but that definition is always a separate clause, never
+# part of the citation itself (unlike, e.g., a legitimate "(en banc)"
+# parenthetical, which full_span() also absorbs and which genuinely is part
+# of the citation -- there's no way to distinguish the two cases in general,
+# so this only trims the unambiguous hereinafter case). Left untrimmed, the
+# citation's own end swallows the hereinafter clause, so citation_graph.py's
+# alias-registration overlap check (which requires the citation to end
+# before the hereinafter clause starts) can never succeed, and the standard
+# "Full Citation (hereinafter "Alias")" pattern silently fails to resolve.
+_TRAILING_HEREINAFTER = re.compile(r"\s*\(hereinafter\s+[“\"][^”\"]+[”\"]\)\s*$", re.I)
+
+
+def _trim_trailing_hereinafter(text: str, start: int, end: int) -> int:
+    match = _TRAILING_HEREINAFTER.search(text, start, end)
+    return match.start() if match else end
+
+
 def _case_match(text: str, citation: FullCaseCitation, resource_id: str | None) -> CitationMatch:
     start, end = citation.full_span()
+    end = _trim_trailing_hereinafter(text, start, end)
     core_start, _ = citation.span()
     case_name = text[start:core_start].strip().rstrip(",").strip()
     groups = citation.groups
-    year = _metadata(citation, "year")
     full_text = text[start:end]
+    year = _metadata(citation, "year")
+    if year and year not in full_text:
+        # eyecite can leak a neighboring citation's year metadata onto this
+        # one (observed when a preceding citation has a page-range plus
+        # pincite, e.g. "215-423, 340"). Trust the year only when it's
+        # actually present in this citation's own text -- never report a
+        # fact this citation doesn't itself contain.
+        year = None
+    if case_name.startswith("("):
+        # A citation embedded inside a sentence parenthetical, e.g.
+        # California's in-line "(Case v. Case (Year) Vol Rep Page.)" form --
+        # the enclosing parenthetical isn't part of the case name.
+        case_name = case_name[1:].lstrip()
+    if year and case_name.endswith(f"({year})"):
+        case_name = case_name[: -(len(year) + 2)].strip()
     court = None
     if year:
         parenthetical = re.search(r"\((?P<body>[^()]*)\)$", full_text)
         if parenthetical:
             body = parenthetical.group("body").strip()
             if body.endswith(year):
-                court = body[: -len(year)].strip()
+                candidate = body[: -len(year)].strip()
+                # A bare "(YYYY)" parenthetical leaves nothing before the
+                # year -- no court, correctly excluded by the `candidate`
+                # truthiness check below. A full "Month Day, YYYY)" date
+                # (seen in less-formal citations) leaves e.g. "June 24,"
+                # before the year, which is a date fragment, not a court.
+                if candidate and not re.fullmatch(r"[A-Z][a-z]+ \d{1,2},", candidate):
+                    court = candidate
     components = _with_present(
         case_name=case_name,
         volume=groups.get("volume"),
@@ -106,6 +147,7 @@ def _law_match(text: str, citation: FullLawCitation, resource_id: str | None) ->
     if continuation:
         end = continuation.end()
         section = (section or "") + continuation.group(0)
+    end = _trim_trailing_hereinafter(text, start, end)
     reporter = _text(groups.get("reporter")) or ""
     compact_reporter = re.sub(r"[.\s]", "", reporter).upper()
     source_type = "regulation" if compact_reporter == "CFR" else "statute"
@@ -126,6 +168,7 @@ def _journal_match(
     text: str, citation: FullJournalCitation, resource_id: str | None
 ) -> CitationMatch:
     start, end = citation.full_span()
+    end = _trim_trailing_hereinafter(text, start, end)
     groups = citation.groups
     components = _with_present(
         volume=groups.get("volume"),

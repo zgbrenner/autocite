@@ -1,0 +1,8 @@
+AutoCite
+Private legal citation checker
+
+Created by Zachary Brenner.
+Open source under the MIT License.
+Source: https://github.com/zgbrenner/autocite
+
+Built with Astro and a deliberately bounded browser-only citation preview.

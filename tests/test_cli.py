@@ -1,4 +1,29 @@
+import os
+import subprocess
+import sys
+
 from autocite_mcp.cli import build_parser
+
+
+def test_cli_emits_utf8_citation_symbols_regardless_of_console_codepage():
+    # pytest's own stdout capture always presents a UTF-8-safe stream, which
+    # masks a real regression: a non-UTF-8 platform console/locale (e.g. the
+    # legacy Windows ANSI codepage) makes plain `sys.stdout.write()` emit
+    # legacy-codepage bytes for non-ASCII citation symbols like `§`/`¶`,
+    # which any UTF-8-expecting consumer downstream then corrupts. Spawn the
+    # real CLI as a subprocess with a forced non-UTF-8 PYTHONIOENCODING to
+    # reproduce that condition and assert stdout is still valid UTF-8.
+    env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "cp1252"
+    result = subprocess.run(
+        [sys.executable, "-m", "autocite_mcp.cli", "check", "See 42 U.S.C. § 1983; id. ¶ 12."],
+        capture_output=True,
+        env=env,
+    )
+    assert result.returncode == 0, result.stderr.decode("utf-8", errors="replace")
+    stdout_text = result.stdout.decode("utf-8")  # raises UnicodeDecodeError on mangled/legacy-codepage bytes
+    assert "§" in stdout_text
+    assert "¶" in stdout_text
 
 
 def test_cli_exposes_deep_review_and_export_commands():

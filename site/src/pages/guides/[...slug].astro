@@ -1,0 +1,77 @@
+---
+import { getCollection, render, type CollectionEntry } from "astro:content";
+import DownloadCta from "../../components/DownloadCta.astro";
+import SiteLayout from "../../layouts/SiteLayout.astro";
+import { buildBreadcrumbJsonLd, buildCanonical } from "../../lib/seo";
+
+export async function getStaticPaths() {
+  const guides = await getCollection("guides");
+  return guides.map((guide) => ({
+    params: { slug: guide.id },
+    props: { guide },
+  }));
+}
+
+interface Props {
+  guide: CollectionEntry<"guides">;
+}
+
+const { guide } = Astro.props;
+const { Content } = await render(guide);
+const pathname = `/guides/${guide.id}/`;
+const published = guide.data.publishedAt.toISOString();
+const modified = (guide.data.updatedAt ?? guide.data.publishedAt).toISOString();
+const articleJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "Article",
+  headline: guide.data.title,
+  description: guide.data.description,
+  datePublished: published,
+  dateModified: modified,
+  mainEntityOfPage: buildCanonical(pathname),
+  author: {
+    "@type": "Person",
+    name: "Zachary Brenner",
+  },
+  publisher: {
+    "@type": "Organization",
+    name: "AutoCite",
+    url: buildCanonical("/"),
+  },
+  keywords: guide.data.keywords.join(", "),
+};
+---
+
+<SiteLayout
+  title={guide.data.title}
+  description={guide.data.description}
+  pathname={pathname}
+  type="article"
+  jsonLd={[
+    articleJsonLd,
+    buildBreadcrumbJsonLd([
+      { name: "AutoCite", path: "/" },
+      { name: "Guides", path: "/guides/" },
+      { name: guide.data.title, path: pathname },
+    ]),
+  ]}
+>
+  <header class="article-header">
+    <div class="narrow">
+      <h1>{guide.data.title}</h1>
+      <p>{guide.data.description}</p>
+      <div class="article-meta">
+        Published <time datetime={published}>{guide.data.publishedAt.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}</time>
+        · {guide.data.audience === "all" ? "For legal writers and editors" : `For ${guide.data.audience}`}
+      </div>
+    </div>
+  </header>
+
+  <article class="article-body">
+    <div class="narrow prose">
+      <Content />
+    </div>
+  </article>
+
+  <section class="section-tight"><div class="shell"><DownloadCta /></div></section>
+</SiteLayout>

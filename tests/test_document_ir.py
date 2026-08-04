@@ -141,6 +141,25 @@ def test_docx_ooxml_footnotes_are_separate_and_citations_keep_note_location():
     assert all(item.location.block_local_start >= 0 for item in note_citations)
 
 
+def test_citation_opening_a_new_paragraph_keeps_its_block_location():
+    # eyecite's case-name backward scan can absorb the leading "\n\n"
+    # paragraph separator into the citation's own start, landing it in the
+    # inter-block gap rather than inside the paragraph block that actually
+    # contains it. Previously this made block_at() fail to find any
+    # containing block, so the whole location (block_id, note_id,
+    # reconstruction_confidence, etc.) was silently discarded even though
+    # the citation is unambiguously inside the second paragraph.
+    text = "Argument.\n\nSmith v. Jones, 123 F.3d 456 (9th Cir. 2020)."
+    ir = parse_text_ir(text)
+    citations = locate_citations(ir, CitationEngine())
+    case_citation = next(item for item in citations if item.source_type == "case")
+    assert case_citation.location.block_id is not None
+    assert case_citation.location.reconstruction_confidence == "certain"
+    assert case_citation.location.provenance == "parsed_document_structure"
+    assert case_citation.location.block_local_start is not None
+    assert case_citation.location.block_local_start >= 0
+
+
 def test_pdf_preserves_pages_coordinates_and_uncertain_footnote_reconstruction(monkeypatch):
     class Box:
         height = 800
@@ -189,6 +208,93 @@ def test_document_mode_classifier_reports_evidence_conflicts_and_confirmation():
     assert result["user_confirmation_recommended"] is True
 
 
+def test_academic_article_mentioning_supreme_court_classifies_as_whitepages():
+    # Regression: an academic article discussing "the Supreme Court" plus a
+    # couple of inline case citations used to false-positive into bluepages
+    # because "supreme court" matched the court-filing regex and there were
+    # no footnotes to offset it. An author byline is now also treated as
+    # positive whitepages evidence.
+    text = (
+        "The Eroding Fourth Amendment\n"
+        "By Greta Shope\n\n"
+        "Introduction\n\n"
+        "This article examines how the Supreme Court has narrowed Fourth "
+        "Amendment protections over the past two decades. In Smith v. Jones, "
+        "123 F.3d 456 (9th Cir. 2020), the court signaled a retreat from "
+        "Katz v. United States, 389 U.S. 347 (1967). This trend is troubling "
+        "for civil liberties scholars.\n\n"
+        "This article proceeds in three parts. Part I surveys the doctrine. "
+        "Part II analyzes recent Supreme Court decisions. Part III proposes "
+        "reform.\n"
+    )
+    ir = parse_text_ir(text, filename="fourth_amendment_article.txt")
+    result = classify_document_mode(ir)
+    assert result["selected_mode"] == "whitepages"
+    assert "author_byline" in result["evidence"]
+    assert "court_filing_language" not in result["evidence"]
+
+
+@pytest.mark.parametrize(
+    "signature_block",
+    [
+        "Respectfully submitted,\n\nBy: John Smith\nAttorney for Plaintiff",
+        "By: /s/ Jane Doe",
+        "By Jane M. Doe, Esq.",
+        "BY THE COURT",
+        "BY ELECTRONIC FILING",
+        "BY ECF AND EMAIL",
+        "by order of the court",
+        "by john q public",
+    ],
+)
+def test_legal_signature_blocks_do_not_trigger_the_byline_heuristic(signature_block):
+    # Regression: the byline heuristic originally used re.I, which made its
+    # [A-Z] "capitalized name" constraint meaningless -- ALL-CAPS legal
+    # boilerplate ("BY THE COURT", "BY ELECTRONIC FILING") and lowercase
+    # prose ("by order of the court") all satisfied [A-Za-z] under re.I and
+    # false-positived as an academic byline. The heuristic now requires a
+    # literal "By " (case-sensitive) to fire.
+    #
+    # No other blue signal is present here (no "district court", "motion",
+    # etc.), so if the byline heuristic misfired it would flip the whole
+    # document to whitepages rather than merely appearing in the losing
+    # side's conflicting_evidence -- checking both evidence and
+    # conflicting_evidence would still catch a milder false positive too.
+    text = signature_block
+    ir = parse_text_ir(text, filename="motion.txt")
+    result = classify_document_mode(ir)
+    assert "author_byline" not in result["evidence"]
+    assert "author_byline" not in result["conflicting_evidence"]
+
+
+def test_footnoted_supreme_court_brief_still_classifies_as_bluepages():
+    # Regression: the fix for the academic-article false positive (above)
+    # removed bare "supreme" from the court-filing regex entirely, which
+    # broke real Supreme Court merits briefs -- they say
+    # Petitioner/Respondent, not plaintiff/defendant, rarely say "district
+    # court" in their opening pages, and with footnotes present the
+    # inline_citations signal is suppressed (see the `and not note_count`
+    # guard), leaving court_filing_language as the only signal that can
+    # possibly keep the document on bluepages. Appellate-caption language
+    # (petitioner/respondent/on writ of certiorari/brief for) now covers
+    # this case instead of the bare court name.
+    text = (
+        "No. 22-451\n\n"
+        "IN THE SUPREME COURT OF THE UNITED STATES\n\n"
+        "JOHN DOE, Petitioner,\nv.\nJANE ROE, Respondent.\n\n"
+        "ON WRIT OF CERTIORARI TO THE UNITED STATES COURT OF APPEALS\n\n"
+        "BRIEF FOR PETITIONER\n\n"
+        "This case concerns the scope of qualified immunity.[1] The court "
+        "of appeals erred in its analysis.[2]\n\n"
+        "[1] See Smith v. Jones, 123 F.3d 456 (9th Cir. 2020).\n\n"
+        "[2] See Doe v. State, 456 F.3d 789 (9th Cir. 2021)."
+    )
+    ir = parse_text_ir(text, filename="scotus_brief.txt")
+    result = classify_document_mode(ir)
+    assert result["selected_mode"] == "bluepages"
+    assert "court_filing_language" in result["evidence"]
+
+
 def test_load_document_bytes_keeps_flat_text_compatibility_and_exposes_ir():
     loaded = load_document_bytes("See 42 USC §1983.".encode(), "memo.txt")
     assert loaded.text == "See 42 USC §1983."
@@ -233,6 +339,11 @@ async def test_uploaded_review_returns_structured_locations_without_breaking_fla
         for item in result["structured_citation_inventory"]
     )
     assert result["input_document"]["document_ir"]["footnote_count"] == 1
+    # citation_count was a dead field, always 0: DocumentIR.citations defaults
+    # to () and nothing ever called with_citations() before summary().
+    assert result["document_ir"]["citation_count"] == len(result["structured_citation_inventory"])
+    assert result["document_ir"]["citation_count"] > 0
+    assert result["input_document"]["document_ir"]["citation_count"] == result["document_ir"]["citation_count"]
 
 
 def test_scanned_pdf_still_returns_ocr_required(monkeypatch):

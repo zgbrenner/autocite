@@ -197,7 +197,20 @@ def load_document_bytes(data: bytes, filename: str, mime_type: str | None = None
     suffix = Path(safe_name).suffix.lower()
     from .document_ir import parse_docx_ir, parse_markdown_ir, parse_pdf_ir, parse_text_ir
 
-    if mime in {"text/plain", "text/markdown"} or suffix in {".txt", ".md", ".markdown"}:
+    _DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    _PDF_MIME = "application/pdf"
+    # A caller-supplied (or correctly guessed) MIME type naming one of
+    # AutoCite's four supported formats is authoritative over the filename
+    # extension. Without this, a correctly-labeled DOCX saved with a
+    # mismatched filename (e.g. "brief.txt") would be forced through the
+    # wrong branch by extension alone -- previously each branch matched on
+    # `mime in {...} or suffix in {...}`, so a matching suffix alone was
+    # enough to route to that branch regardless of what the MIME type said.
+    mime_is_recognized = mime in {"text/plain", "text/markdown", _DOCX_MIME, _PDF_MIME}
+
+    if mime in {"text/plain", "text/markdown"} or (
+        not mime_is_recognized and suffix in {".txt", ".md", ".markdown"}
+    ):
         try:
             text = data.decode("utf-8-sig")
         except UnicodeDecodeError as exc:
@@ -208,17 +221,14 @@ def load_document_bytes(data: bytes, filename: str, mime_type: str | None = None
             if source_format == "markdown"
             else parse_text_ir(text, filename=safe_name, mime_type=mime)
         )
-    elif (
-        mime == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        or suffix == ".docx"
-    ):
+    elif mime == _DOCX_MIME or (not mime_is_recognized and suffix == ".docx"):
         try:
             ir = parse_docx_ir(data, filename=safe_name)
             text = ir.to_text()
         except Exception as exc:
             raise DocumentLoadError("invalid_docx", "The DOCX file could not be read.") from exc
         source_format = "docx"
-    elif mime == "application/pdf" or suffix == ".pdf":
+    elif mime == _PDF_MIME or (not mime_is_recognized and suffix == ".pdf"):
         try:
             ir = parse_pdf_ir(data, filename=safe_name)
             text = ir.to_text()

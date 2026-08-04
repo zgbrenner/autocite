@@ -20,22 +20,51 @@ window.addEventListener('message',event=>{if(event.source!==window.parent)return
 </script></body></html>'''
 
 
+def _rule_finding_as_issue(finding: dict[str, Any]) -> dict[str, Any]:
+    """Reshape a deterministic_rules.RuleFinding dict into the CitationIssue
+    shape (code/message/rule) that the workspace's "issues" field expects."""
+    return {
+        "code": finding.get("issue_code", ""),
+        "severity": finding.get("severity", "warning"),
+        "message": finding.get("explanation", ""),
+        "rule": finding.get("rule_family_reference", ""),
+        "start": finding.get("start", 0),
+        "end": finding.get("end", 0),
+        "original": finding.get("original", ""),
+        "suggestion": finding.get("suggestion"),
+        "confidence": finding.get("confidence", "medium"),
+        "correction_level": finding.get("correction_level", "review_required"),
+        "provenance": finding.get("provenance", "deterministic_logic"),
+    }
+
+
 def workspace_payload(review: dict[str, Any]) -> dict[str, Any]:
     """Return bounded data needed by the interactive workspace and host model."""
     original = str(review.get("original_text") or "")
     corrected = str(review.get("corrected_text") or "")
+    # remaining_issues (deterministic engine) and rule_findings (contextual
+    # rule evaluation, e.g. quotation/pincite/short-form review) are both
+    # first-class review findings -- review_session.py already merges them
+    # for the desktop app's view model, so the interactive workspace must too
+    # or it silently hides an entire category of detected issues. The two
+    # collections use different field names, so rule_findings are reshaped to
+    # match the CitationIssue schema the "issues" field is validated against.
+    issues = [
+        *(review.get("remaining_issues") or []),
+        *(_rule_finding_as_issue(finding) for finding in review.get("rule_findings") or []),
+    ]
     return {
         "summary": {
             "mode": review.get("mode"),
             "applied_edit_count": len(review.get("applied_edits") or []),
-            "remaining_issue_count": len(review.get("remaining_issues") or []),
+            "remaining_issue_count": len(issues),
             "deep_case_count": len(
                 ((review.get("deep_review_results") or {}).get("cases") or [])
             ),
         },
         "original_text": original[:100_000],
         "corrected_text": corrected[:100_000],
-        "issues": list(review.get("remaining_issues") or [])[:500],
+        "issues": issues[:500],
         "applied_edits": list(review.get("applied_edits") or [])[:500],
         "deep_review_results": review.get("deep_review_results") or {},
         "response_contract": review.get("response_contract") or [],

@@ -1,4 +1,85 @@
 from autocite_mcp.engine import CitationEngine
+from autocite_mcp.models import CitationMatch
+
+
+def _synthetic_citations_with_fallback_id_forms(n):
+    # Directly constructs CitationMatch objects (bypassing extract()/eyecite
+    # entirely) so timing isolates _lint's own cost with zero confound from
+    # extraction's separate, unrelated performance characteristics. Each
+    # "id." short form has parser != "eyecite", forcing the orphan-check's
+    # closest-prior-substantive-citation lookup path.
+    citations = []
+    pos = 0
+    for i in range(n):
+        text = f"Case{i} v. Def{i}, {100 + i} U.S. {200 + i} ({1900 + i % 99}). "
+        citations.append(CitationMatch("case", text.strip(), pos, pos + len(text) - 2, {}))
+        pos += len(text)
+        id_text = "id. "
+        citations.append(
+            CitationMatch(
+                "short_form",
+                id_text.strip(),
+                pos,
+                pos + len(id_text) - 1,
+                {"form": "id", "parser": "fallback"},
+            )
+        )
+        pos += len(id_text)
+    return citations, pos
+
+
+def test_lint_orphan_id_lookup_scales_far_better_than_quadratically():
+    # _lint's orphan-"Id." check previously rebuilt a filtered list by
+    # scanning the entire substantive-citations list from scratch for
+    # every non-eyecite-parsed short-form "id." citation -- full O(n^2)
+    # in the number of citations, independent of proximity. A citation-
+    # dense document with many such short forms could hang the server.
+    # Measured directly (no O(n^2) eyecite/extraction confound, since
+    # citations are constructed synthetically here): old code ~46x slower
+    # for 8x the input (clearly quadratic); fixed code ~8x slower (linear).
+    import time
+
+    def _timed(n):
+        citations, text_len = _synthetic_citations_with_fallback_id_forms(n)
+        text = "x" * (text_len + 10)
+        start = time.perf_counter()
+        CitationEngine()._lint(text, citations, "bluepages")
+        return time.perf_counter() - start
+
+    _timed(200)  # warm up
+    small = _timed(500)
+    large = _timed(4000)  # 8x the input
+    # A true O(n^2) scan takes ~64x longer for 8x the input; a linear scan
+    # takes ~8x longer. Generous headroom (25x) against timing noise while
+    # still clearly catching a regression back to the full rescan.
+    assert large < max(small, 0.002) * 25, f"small={small:.4f}s large={large:.4f}s"
+
+
+def test_lint_orphan_id_lookup_is_correct_for_non_monotonic_citation_ends():
+    # Regression: substantive_ends was built by taking .end values in the
+    # SAME order as `substantive` (start,end order, per extract()'s sort),
+    # and a comment claimed that made substantive_ends ascending. It does
+    # not: a citation nested inside another (e.g. a "(citing ...)"
+    # parenthetical) starts later but can end earlier, so start order does
+    # not imply end order. bisect_left silently returns wrong answers on a
+    # non-ascending list instead of raising, so this produced false
+    # "unresolved antecedent" (SHORT_FORM_ORPHAN_ID) flags.
+    #
+    # Three substantive citations in start order (0, 50, 60) with ends
+    # (100, 700, 690) -- non-ascending -- followed by an "Id." at 695.
+    # Bisecting the unsorted list (start order) picks end=100 as the
+    # "closest prior" (distance 595, over the 500-char orphan threshold),
+    # wrongly flagging it as orphaned; bisecting the correctly end-sorted
+    # list picks end=690 (distance 5), correctly resolving it.
+    text = "x" * 750
+    citations = [
+        CitationMatch("case", "case1", 0, 100, {}),
+        CitationMatch("case", "case2", 50, 700, {}),
+        CitationMatch("case", "case3", 60, 690, {}),
+        CitationMatch("short_form", "Id.", 695, 698, {"form": "id", "parser": "fallback"}),
+    ]
+    issues = CitationEngine()._lint(text, citations, "bluepages")
+    assert not any(issue.code == "SHORT_FORM_ORPHAN_ID" for issue in issues)
 
 
 def test_extracts_multiple_legal_source_types():
@@ -9,6 +90,43 @@ def test_extracts_multiple_legal_source_types():
     report = CitationEngine().analyze(text, mode="bluepages")
     kinds = {citation["source_type"] for citation in report["citations"]}
     assert {"case", "statute", "regulation", "short_form"}.issubset(kinds)
+
+
+def test_zero_width_characters_do_not_hide_a_citation_from_extraction():
+    # Zero-width/invisible Unicode characters (ZWSP, ZWNJ, ZWJ, word joiner)
+    # render identically to a human reader whether present or not, but
+    # previously broke both eyecite's and AutoCite's own regex tokenization
+    # entirely -- a citation with these interspersed matched nothing at all.
+    # Real in copy-pasted text (rich-text/PDF extraction artifacts), not
+    # just adversarial input. Written with explicit \\uXXXX escapes (not
+    # literal characters) so the test stays auditable.
+    poisoned = (
+        "Brown​ v.‌ Board‍ of Education, 347⁠ U.S. 483 (1954)."
+    )
+    matches = CitationEngine().extract(poisoned)
+    assert len(matches) == 1
+    case = matches[0]
+    assert case.source_type == "case"
+    # The span must be valid against the ORIGINAL (unsanitized) text: the
+    # citation's own reported text, with spaces put back where the
+    # neutralized invisible characters were, must equal what's literally at
+    # that span in the original string.
+    original_slice = poisoned[case.start : case.end]
+    assert original_slice.translate(
+        {0x200B: " ", 0x200C: " ", 0x200D: " ", 0x2060: " "}
+    ) == case.text
+
+
+def test_zero_width_characters_do_not_block_a_safe_fix_from_applying():
+    # extract() finding the citation is necessary but not sufficient --
+    # _lint does its own separate regex matching and previously still
+    # failed silently even after extraction was fixed, so no fix was ever
+    # applied to a citation containing an invisible character.
+    poisoned = "42 USC​ § 1983."
+    result = CitationEngine().fix(poisoned)
+    assert result["applied_edits"]
+    assert result["applied_edits"][0]["code"] == "STATUTE_CODE_ABBREVIATION"
+    assert "U.S.C." in result["fixed_text"]
 
 
 def test_regulation_citation_with_letter_embedded_subsection_is_not_truncated():
@@ -101,6 +219,18 @@ def test_flags_orphan_id_short_form():
     assert any(issue["code"] == "SHORT_FORM_ORPHAN_ID" for issue in report["issues"])
 
 
+def test_orphan_ibid_short_form_message_names_ibid_not_id():
+    # eyecite classifies "Ibid." under the same IdCitation/"id" form as
+    # "Id.", so it hits the same orphan-check branch -- found via real-world
+    # document testing (a real SCOTUS opinion used house-style "Ibid."),
+    # where the flagged message wrongly said "Id." must unambiguously refer
+    # to..." even though the actual token was "Ibid.".
+    report = CitationEngine().analyze("Ibid. at 12.", mode="whitepages")
+    issue = next(item for item in report["issues"] if item["code"] == "SHORT_FORM_ORPHAN_ID")
+    assert "Ibid." in issue["message"]
+    assert "Id." not in issue["message"]
+
+
 def test_whitepages_flags_unarchived_bare_url():
     report = CitationEngine().analyze(
         "See https://example.com/legal-update.", mode="whitepages"
@@ -131,6 +261,51 @@ def test_uses_eyecite_full_span_without_including_signal():
     assert case.components["case_name"] == "Brown v. Board of Education"
     assert short_form.text == "Id. at 496"
     assert short_form.components["resolved_to"] == case.components["resolved_to"]
+
+
+def test_california_in_line_citation_case_name_excludes_enclosing_parenthetical():
+    # California's standard in-line citation form embeds the whole citation
+    # inside a sentence parenthetical with the year directly after the case
+    # name: "(Case v. Case (Year) Vol Rep Page.)". Found via real-world
+    # document testing (a real Cal. Ct. App. opinion) -- the leading "("
+    # and the embedded "(Year)" were both being swept into case_name.
+    text = (
+        "The rule is settled. (Steiner v. Superior Court (2013) "
+        "220 Cal.App.4th 1479, 1485.) Liability follows accordingly."
+    )
+    citations = CitationEngine().extract(text)
+    case = next(item for item in citations if item.source_type == "case")
+    assert case.components["case_name"] == "Steiner v. Superior Court"
+    assert case.components["year"] == "2013"
+
+
+def test_year_metadata_is_not_trusted_when_absent_from_the_citations_own_text():
+    # eyecite can leak a neighboring citation's year metadata onto the next
+    # citation when the preceding one has a page-range plus pincite (e.g.
+    # "215-423, 340"). Found via real-world document testing (a real SCOTUS
+    # opinion): a citation plainly reading "(June 5, 1984)" was reported
+    # with year "2022", leaked from an unrelated preceding citation.
+    text = (
+        "See 597 S. Ct. 215-423, 340 (June 24, 2022). "
+        "See also United States v. Leon, 104 U.S. 897 (June 5, 1984)."
+    )
+    citations = CitationEngine().extract(text)
+    cases = [item for item in citations if item.source_type == "case"]
+    leon = next(item for item in cases if "Leon" in item.text)
+    assert leon.components["year"] == "1984"
+
+
+def test_full_date_parenthetical_is_not_misreported_as_a_court():
+    # A citation parenthetical containing a full "Month Day, Year" date
+    # (real in less-formal citations, e.g. quoting a slip opinion) has no
+    # court abbreviation in it at all. Found via real-world document
+    # testing: the date fragment "June 24," was being reported as the
+    # `court` component.
+    text = "See generally 597 S. Ct. 215, 340 (June 24, 2022)."
+    citations = CitationEngine().extract(text)
+    case = next(item for item in citations if item.source_type == "case")
+    assert "court" not in case.components
+    assert case.components["year"] == "2022"
 
 
 def test_extracts_state_statute_and_supra_metadata():
