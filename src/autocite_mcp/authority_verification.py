@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import StrEnum
+from enum import Enum
 from typing import Any, Mapping, Sequence
 
 import httpx
@@ -12,11 +12,14 @@ COURTLISTENER_CITATION_LOOKUP_URL = (
 )
 
 
-class VerificationStatus(StrEnum):
+class VerificationStatus(str, Enum):
     VERIFIED = "verified"
     AMBIGUOUS = "ambiguous"
     NOT_FOUND = "not_found"
     UNAVAILABLE = "unavailable"
+
+    def __str__(self) -> str:
+        return self.value
 
 
 @dataclass(frozen=True, slots=True)
