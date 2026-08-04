@@ -68,6 +68,9 @@ jobs:
           raw = source.read_bytes()
           compact = b''.join(raw.split())
           print(f'payload_bytes={len(raw)} compact_bytes={len(compact)} sha256={hashlib.sha256(raw).hexdigest()}')
+          for index in range(0, len(compact), 1024):
+              chunk = compact[index:index + 1024]
+              print(f'chunk={index // 1024:02d} bytes={len(chunk)} sha256={hashlib.sha256(chunk).hexdigest()}')
           compressed = base64.b64decode(compact, validate=True)
           print(f'gzip_bytes={len(compressed)} sha256={hashlib.sha256(compressed).hexdigest()}')
           decoded = gzip.decompress(compressed)
