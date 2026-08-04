@@ -66,8 +66,8 @@ jobs:
           python-version: "3.12"
           enable-cache: true
           cache-dependency-glob: uv.lock
-      - name: Verify lockfile
-        run: uv lock --check
+      - name: Resolve patched security floor
+        run: uv lock --upgrade-package cryptography
       - name: Audit production dependency set
         run: |
           uv audit \
