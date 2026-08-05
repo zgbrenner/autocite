@@ -5,6 +5,7 @@ on:
     branches: [codex/proof-carrying-autofix-v071]
     paths:
       - ".codex/autocite-proof.patch.gz.b64.*"
+      - ".codex/autocite-proof-followup.patch.b64"
       - ".github/workflows/codex-proof-carrying-autofix.yml"
   workflow_dispatch:
 
@@ -27,7 +28,7 @@ jobs:
           fetch-depth: 0
           ref: codex/proof-carrying-autofix-v071
 
-      - name: Reconstruct and authenticate the reviewed patch
+      - name: Reconstruct and authenticate the reviewed patches
         shell: bash
         run: |
           set -euo pipefail
@@ -55,14 +56,20 @@ jobs:
           PY
           test "$(sha256sum /tmp/autocite-proof.patch | cut -d' ' -f1)" = \
             "d51feb47322eb72d22a995976014ba98bb42927a6f403132d029c3ec804e0237"
+          test "$(sha256sum .codex/autocite-proof-followup.patch.b64 | cut -d' ' -f1)" = \
+            "7f4cc7234231aeb88f789b8c0ccf4f2871153909fa449964f818350b64e342c6"
+          base64 -d .codex/autocite-proof-followup.patch.b64 > /tmp/autocite-proof-followup.patch
+          test "$(sha256sum /tmp/autocite-proof-followup.patch | cut -d' ' -f1)" = \
+            "770c6ec122c1efc189c10fe4072b83c4ce8ce8349e37dc0b4da3270ecd51e115"
 
-      - name: Reset to current main and apply only the reviewed patch
+      - name: Reset to current main and apply only the reviewed patches
         shell: bash
         run: |
           set -euo pipefail
           git fetch origin main
           git reset --hard origin/main
           git apply --index --whitespace=error-all /tmp/autocite-proof.patch
+          git apply --index --whitespace=error-all /tmp/autocite-proof-followup.patch
           git diff --cached --check
           git diff --cached --stat
 
