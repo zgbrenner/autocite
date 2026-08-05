@@ -6,6 +6,7 @@ on:
     paths:
       - ".codex/autocite-proof.patch.gz.b64.*"
       - ".codex/autocite-proof-followup.patch.b64"
+      - ".codex/autocite-proof-citation-ci.patch.b64"
       - ".github/workflows/codex-proof-carrying-autofix.yml"
   workflow_dispatch:
 
@@ -56,11 +57,21 @@ jobs:
           PY
           test "$(sha256sum /tmp/autocite-proof.patch | cut -d' ' -f1)" = \
             "d51feb47322eb72d22a995976014ba98bb42927a6f403132d029c3ec804e0237"
+
           test "$(sha256sum .codex/autocite-proof-followup.patch.b64 | cut -d' ' -f1)" = \
             "7f4cc7234231aeb88f789b8c0ccf4f2871153909fa449964f818350b64e342c6"
           base64 -d .codex/autocite-proof-followup.patch.b64 > /tmp/autocite-proof-followup.patch
           test "$(sha256sum /tmp/autocite-proof-followup.patch | cut -d' ' -f1)" = \
             "770c6ec122c1efc189c10fe4072b83c4ce8ce8349e37dc0b4da3270ecd51e115"
+
+          tr -d '[:space:]' < .codex/autocite-proof-citation-ci.patch.b64 \
+            > /tmp/autocite-proof-citation-ci.patch.b64
+          test "$(sha256sum /tmp/autocite-proof-citation-ci.patch.b64 | cut -d' ' -f1)" = \
+            "f8ebbb2142f0c511d0c6416439bc6367dbd97c3817875eb80bd97eeb7cb350aa"
+          base64 -d /tmp/autocite-proof-citation-ci.patch.b64 \
+            > /tmp/autocite-proof-citation-ci.patch
+          test "$(sha256sum /tmp/autocite-proof-citation-ci.patch | cut -d' ' -f1)" = \
+            "a6c836c4f08d78601d3bb573735d4a3e043c85ab2be955158a56bd72e5b0495b"
 
       - name: Reset to current main and apply only the reviewed patches
         shell: bash
@@ -70,6 +81,7 @@ jobs:
           git reset --hard origin/main
           git apply --index --whitespace=error-all /tmp/autocite-proof.patch
           git apply --index --whitespace=error-all /tmp/autocite-proof-followup.patch
+          git apply --index --whitespace=error-all /tmp/autocite-proof-citation-ci.patch
           git diff --cached --check
           git diff --cached --stat
 
