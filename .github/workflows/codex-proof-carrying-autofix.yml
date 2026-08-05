@@ -59,6 +59,74 @@ jobs:
           uv python install 3.10 3.12
           uv sync --frozen --python 3.12 --extra dev --extra tauri-build
 
+      - name: Repair and validate the generated bootstrap
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('scripts/codex_proof_carrying_autofix.py')
+          raw = path.read_text(encoding='utf-8')
+          prefix = "FILES = json.loads('"
+          start = raw.index(prefix) + len(prefix)
+          if not raw.endswith("')"):
+              raise SystemExit('Unexpected bootstrap payload format')
+          payload = raw[start:-2]
+          repaired = f'''from __future__ import annotations
+
+          import base64
+          import json
+          import sys
+          from pathlib import Path
+
+          ROOT = Path(__file__).resolve().parents[1]
+          FILES = json.loads({payload!r})
+          TEST_FILES = {{
+              "tests/test_edit_safety.py",
+              "tests/test_proof_carrying_autofix.py",
+          }}
+          REQUIRED_FILES = TEST_FILES | {{
+              "src/autocite_mcp/edit_safety.py",
+              "src/autocite_mcp/engine.py",
+              "src/autocite_mcp/tools.py",
+              "README.md",
+              "docs/EDIT-SAFETY.md",
+          }}
+
+          def write_files(paths: set[str]) -> None:
+              missing = sorted(paths - FILES.keys())
+              if missing:
+                  raise SystemExit(f"Missing bootstrap payloads: {{missing}}")
+              for relative in sorted(paths):
+                  target = ROOT / relative
+                  target.parent.mkdir(parents=True, exist_ok=True)
+                  target.write_bytes(base64.b64decode(FILES[relative], validate=True))
+                  print(f"wrote {{relative}}")
+
+          def main() -> None:
+              if len(sys.argv) != 2:
+                  raise SystemExit("usage: codex_proof_carrying_autofix.py tests|implementation|all")
+              mode = sys.argv[1]
+              if mode == "tests":
+                  selected = TEST_FILES
+              elif mode == "implementation":
+                  selected = set(FILES) - TEST_FILES
+              elif mode == "all":
+                  selected = set(FILES)
+              else:
+                  raise SystemExit(f"unknown mode: {{mode}}")
+              if not REQUIRED_FILES.issubset(FILES):
+                  missing = sorted(REQUIRED_FILES - FILES.keys())
+                  raise SystemExit(f"Incomplete bootstrap payload: {{missing}}")
+              write_files(selected)
+
+          if __name__ == "__main__":
+              main()
+          '''
+          repaired = '\n'.join(line[10:] if line.startswith('          ') else line for line in repaired.splitlines()) + '\n'
+          compile(repaired, str(path), 'exec')
+          path.write_text(repaired, encoding='utf-8')
+          PY
+
       - name: Prove the new tests fail before implementation
         shell: bash
         run: |
