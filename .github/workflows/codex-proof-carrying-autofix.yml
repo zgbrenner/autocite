@@ -34,9 +34,27 @@ jobs:
           cat .codex/autocite-proof.patch.gz.b64.* > /tmp/autocite-proof.patch.gz.b64
           test "$(sha256sum /tmp/autocite-proof.patch.gz.b64 | cut -d' ' -f1)" = \
             "377115ca02c1935dd1238712bb17c921319fa61235fb0a5e70f50245615f0246"
-          base64 -d /tmp/autocite-proof.patch.gz.b64 | gzip -d > /tmp/autocite-proof.patch
-          test "$(sha256sum /tmp/autocite-proof.patch | cut -d' ' -f1)" = \
+          base64 -d /tmp/autocite-proof.patch.gz.b64 | gzip -d > /tmp/autocite-proof.raw.patch
+          test "$(sha256sum /tmp/autocite-proof.raw.patch | cut -d' ' -f1)" = \
             "f0615ac1071839957fecbc789a238b997c0e3a24a63eef125eab2dbe7ee8c4e2"
+          python - <<'PY'
+          from pathlib import Path
+
+          source = Path('/tmp/autocite-proof.raw.patch')
+          target = Path('/tmp/autocite-proof.patch')
+          patch = source.read_bytes()
+          replacements = (
+              (b'index 0000000..818261b\n', b'index 0000000..919410b\n'),
+              (b'+**Date:** August 4, 2026  \n', b'+**Date:** August 4, 2026\n'),
+          )
+          for before, after in replacements:
+              if patch.count(before) != 1:
+                  raise SystemExit(f'Expected exactly one reviewed normalization: {before!r}')
+              patch = patch.replace(before, after)
+          target.write_bytes(patch)
+          PY
+          test "$(sha256sum /tmp/autocite-proof.patch | cut -d' ' -f1)" = \
+            "d51feb47322eb72d22a995976014ba98bb42927a6f403132d029c3ec804e0237"
 
       - name: Reset to current main and apply only the reviewed patch
         shell: bash
