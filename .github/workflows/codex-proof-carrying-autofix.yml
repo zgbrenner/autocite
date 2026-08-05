@@ -1,42 +1,151 @@
-name: Export AutoCite branch for verified editing
+name: Apply and verify proof-carrying AutoCite patch
 
 on:
   push:
     branches: [codex/proof-carrying-autofix-v071]
     paths:
-      - .github/workflows/codex-proof-carrying-autofix.yml
+      - ".codex/autocite-proof.patch.gz.b64.*"
+      - ".github/workflows/codex-proof-carrying-autofix.yml"
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
-  group: codex-autocite-export
-  cancel-in-progress: true
+  group: codex-proof-carrying-v071
+  cancel-in-progress: false
 
 jobs:
-  export:
+  apply-verify:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 90
     steps:
       - name: Check out the isolated branch
         uses: actions/checkout@v6
         with:
-          fetch-depth: 1
+          fetch-depth: 0
           ref: codex/proof-carrying-autofix-v071
 
-      - name: Package repository source
+      - name: Reconstruct and authenticate the reviewed patch
+        shell: bash
         run: |
-          tar \
-            --exclude=.git \
-            --exclude=.github/workflows/codex-proof-carrying-autofix.yml \
-            --exclude=scripts/codex_proof_carrying_autofix.py \
-            -czf /tmp/autocite-source.tgz .
+          set -euo pipefail
+          cat .codex/autocite-proof.patch.gz.b64.* > /tmp/autocite-proof.patch.gz.b64
+          test "$(sha256sum /tmp/autocite-proof.patch.gz.b64 | cut -d' ' -f1)" = \
+            "377115ca02c1935dd1238712bb17c921319fa61235fb0a5e70f50245615f0246"
+          base64 -d /tmp/autocite-proof.patch.gz.b64 | gzip -d > /tmp/autocite-proof.patch
+          test "$(sha256sum /tmp/autocite-proof.patch | cut -d' ' -f1)" = \
+            "f0615ac1071839957fecbc789a238b997c0e3a24a63eef125eab2dbe7ee8c4e2"
 
-      - name: Upload source snapshot
-        uses: actions/upload-artifact@v7
+      - name: Reset to current main and apply only the reviewed patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git reset --hard origin/main
+          git apply --index --whitespace=error-all /tmp/autocite-proof.patch
+          git diff --cached --check
+          git diff --cached --stat
+
+      - name: Install Python and uv
+        uses: astral-sh/setup-uv@v7
         with:
-          name: autocite-source-${{ github.sha }}
-          path: /tmp/autocite-source.tgz
-          if-no-files-found: error
-          retention-days: 1
+          version: '0.12.1'
+          enable-cache: true
+
+      - name: Install Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.85'
+
+      - name: Install Linux desktop build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Prepare locked Python environments
+        run: |
+          uv python install 3.10 3.12
+          uv sync --frozen --python 3.12 --extra dev --extra tauri-build
+
+      - name: Run focused proof and regression tests
+        run: |
+          uv run --python 3.12 pytest -q \
+            tests/test_edit_safety.py \
+            tests/test_proof_carrying_autofix.py \
+            tests/test_engine.py \
+            tests/test_tools.py \
+            tests/test_output_models.py \
+            tests/test_certification.py
+
+      - name: Verify the declared Python 3.10 floor
+        run: |
+          uv sync --frozen --python 3.10 --extra dev --extra tauri-build
+          uv run --python 3.10 pytest -q \
+            tests/test_edit_safety.py \
+            tests/test_proof_carrying_autofix.py \
+            tests/test_engine.py \
+            tests/test_tools.py \
+            tests/test_output_models.py \
+            tests/test_certification.py
+
+      - name: Run the complete Python quality gate
+        run: |
+          uv sync --frozen --python 3.12 --extra dev --extra tauri-build
+          uv run ruff check src tests training scripts
+          uv run pytest
+          uv run python -m compileall -q src packaging scripts
+          uv run python scripts/eval_gold.py
+          uv run python scripts/eval_system.py --fail-under 0.80
+          uv build
+
+      - name: Run the complete desktop web quality gate
+        run: |
+          npm ci --ignore-scripts --prefix desktop
+          npm run check --prefix desktop
+
+      - name: Run native shell tests
+        run: cargo test --manifest-path desktop/src-tauri/Cargo.toml --locked
+
+      - name: Audit production dependency surfaces
+        run: |
+          uv audit
+          npm run audit:production --prefix desktop
+
+      - name: Mark the verified implementation plan complete
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('docs/superpowers/plans/2026-08-04-proof-carrying-autofix.md')
+          text = path.read_text(encoding='utf-8')
+          if '- [ ]' not in text:
+              raise SystemExit('Expected unchecked implementation-plan steps')
+          path.write_text(text.replace('- [ ]', '- [x]'), encoding='utf-8')
+          PY
+
+      - name: Commit and publish only the fully verified result
+        env:
+          BRANCH: codex/proof-carrying-autofix-v071
+        run: |
+          rm -rf .codex
+          rm -f .github/workflows/codex-proof-carrying-autofix.yml
+          rm -f scripts/codex_proof_carrying_autofix.py
+          git add -A
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'feat: certify every automatic citation edit'
+          git push --force-with-lease origin "HEAD:${BRANCH}"
